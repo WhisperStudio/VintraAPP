@@ -10,9 +10,6 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.vintrastudio.VintraApp",
-      "entitlements": {
-        "aps-environment": "development"
-      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -32,7 +29,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
       [
         "expo-splash-screen",
         {
