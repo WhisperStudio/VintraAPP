@@ -1,181 +1,180 @@
-import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useEffect } from 'react';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ExternalLink } from '@/components/external-link';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-  const theme = useTheme();
+const items = ['Project overview', 'AI support', 'Launch timeline'];
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+function MovingBackground() {
+  const move = useSharedValue(0);
+
+  useEffect(() => {
+    move.value = withRepeat(withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.cubic) }), -1, true);
+  }, [move]);
+
+  const topBand = useAnimatedStyle(() => ({
+    transform: [{ translateX: -120 + move.value * 160 }, { rotateZ: '-12deg' }],
+  }));
+
+  const bottomBand = useAnimatedStyle(() => ({
+    transform: [{ translateX: 100 - move.value * 150 }, { rotateZ: '17deg' }],
+  }));
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
+    <View pointerEvents="none" style={styles.background}>
+      <Animated.View style={[styles.topBand, topBand]} />
+      <Animated.View style={[styles.bottomBand, bottomBand]} />
+    </View>
+  );
+}
+
+export default function RoadmapScreen() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const compact = width < 720;
+
+  return (
+    <ThemedView style={styles.container}>
+      <MovingBackground />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + Spacing.four, paddingBottom: insets.bottom + BottomTabInset + Spacing.five },
+        ]}>
+        <Animated.View entering={FadeInUp.delay(100).springify()} style={styles.center}>
+          <View style={styles.iconBox}>
+            <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={28} tintColor="#ffffff" />
+          </View>
+          <ThemedText style={[styles.title, compact && styles.titleCompact]}>What we are building</ThemedText>
+          <ThemedText style={styles.lead}>
+            A lightweight client app for better updates, faster support and smoother launches.
           </ThemedText>
+        </Animated.View>
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
-
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
-
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+        <Animated.View entering={FadeInDown.delay(260).springify()} style={styles.panel}>
+          {items.map((item, index) => (
+            <View key={item} style={styles.row}>
+              <ThemedText style={styles.step}>0{index + 1}</ThemedText>
+              <ThemedText style={styles.rowText}>{item}</ThemedText>
+            </View>
+          ))}
+        </Animated.View>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
   container: {
-    maxWidth: MaxContentWidth,
+    flex: 1,
+    backgroundColor: '#06111f',
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  topBand: {
+    position: 'absolute',
+    top: 110,
+    left: -170,
+    width: 620,
+    height: 170,
+    borderRadius: 42,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  bottomBand: {
+    position: 'absolute',
+    right: -220,
+    bottom: 80,
+    width: 680,
+    height: 210,
+    borderRadius: 52,
+    backgroundColor: 'rgba(36,108,255,0.25)',
+  },
+  content: {
     flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
+    width: '100%',
+    maxWidth: 820,
+    alignSelf: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+    gap: Spacing.five,
   },
-  centerText: {
+  center: {
+    alignItems: 'center',
+  },
+  iconBox: {
+    width: 68,
+    height: 68,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.three,
+  },
+  title: {
+    color: '#ffffff',
+    fontSize: 52,
+    lineHeight: 57,
+    fontWeight: '900',
     textAlign: 'center',
   },
-  pressed: {
-    opacity: 0.7,
+  titleCompact: {
+    fontSize: 38,
+    lineHeight: 42,
   },
-  linkButton: {
+  lead: {
+    color: '#bdc9dc',
+    fontSize: 18,
+    lineHeight: 29,
+    fontWeight: '700',
+    textAlign: 'center',
+    maxWidth: 560,
+    marginTop: Spacing.three,
+  },
+  panel: {
+    borderRadius: 28,
+    padding: Spacing.three,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  row: {
+    minHeight: 68,
+    borderRadius: 20,
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
     alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    marginBottom: Spacing.two,
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+  step: {
+    color: '#7da8ff',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
   },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+  rowText: {
+    color: '#ffffff',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
   },
 });

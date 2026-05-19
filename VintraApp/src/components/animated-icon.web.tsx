@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Keyframe, Easing } from 'react-native-reanimated';
 
@@ -58,7 +57,7 @@ export function AnimatedIcon() {
   return (
     <View style={styles.iconContainer}>
       <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
-        <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
+        <View style={styles.glowShape} />
       </Animated.View>
 
       <Animated.View style={styles.background} entering={keyframe.duration(DURATION)}>
@@ -66,7 +65,11 @@ export function AnimatedIcon() {
       </Animated.View>
 
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+        <View style={styles.logoMark}>
+          <View style={styles.logoBladeLeft} />
+          <View style={styles.logoBladeRight} />
+          <View style={styles.logoDot} />
+        </View>
       </Animated.View>
     </View>
   );
@@ -89,20 +92,54 @@ const styles = StyleSheet.create({
     height: 201,
     position: 'absolute',
   },
+  glowShape: {
+    width: 201,
+    height: 201,
+    borderRadius: 100,
+    backgroundColor: 'rgba(36, 108, 255, 0.14)',
+  },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
     width: 128,
     height: 128,
   },
-  image: {
-    position: 'absolute',
-    width: 76,
-    height: 71,
-  },
   background: {
     width: 128,
     height: 128,
     position: 'absolute',
+  },
+  logoMark: {
+    width: 70,
+    height: 58,
+  },
+  logoBladeLeft: {
+    position: 'absolute',
+    left: 4,
+    top: 3,
+    width: 24,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    transform: [{ rotateZ: '-29deg' }],
+  },
+  logoBladeRight: {
+    position: 'absolute',
+    left: 31,
+    top: 2,
+    width: 24,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#dbe8ff',
+    transform: [{ rotateZ: '29deg' }],
+  },
+  logoDot: {
+    position: 'absolute',
+    right: 0,
+    top: 5,
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
   },
 });
