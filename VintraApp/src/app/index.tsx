@@ -1,6 +1,6 @@
 import { SymbolView } from 'expo-symbols';
-import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { requestNotificationAccess } from '@/lib/notifications';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -129,6 +130,23 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 760;
+  const [notificationStatus, setNotificationStatus] = useState<'idle' | 'loading' | 'enabled'>('idle');
+
+  async function handleGetNotified() {
+    setNotificationStatus('loading');
+
+    try {
+      const result = await requestNotificationAccess();
+      setNotificationStatus(result.granted ? 'enabled' : 'idle');
+      Alert.alert(result.granted ? 'Notifications enabled' : 'Notifications not enabled', result.message);
+    } catch (error) {
+      setNotificationStatus('idle');
+      Alert.alert(
+        'Notifications unavailable',
+        error instanceof Error ? error.message : 'Could not enable notifications.',
+      );
+    }
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -162,9 +180,31 @@ export default function HomeScreen() {
             </ThemedText>
 
             <View style={styles.actions}>
-              <AnimatedPressable entering={FadeInDown.delay(360).springify()} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-                <ThemedText style={styles.primaryText}>Get notified</ThemedText>
-                <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_right' }} size={15} tintColor="#06111f" />
+              <AnimatedPressable
+                entering={FadeInDown.delay(360).springify()}
+                onPress={handleGetNotified}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  notificationStatus === 'enabled' && styles.primaryButtonEnabled,
+                  pressed && styles.pressed,
+                ]}>
+                <View style={styles.buttonIcon}>
+                  <SymbolView
+                    name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
+                    size={18}
+                    tintColor="#ffffff"
+                  />
+                </View>
+                <View>
+                  <ThemedText style={styles.primaryText}>
+                    {notificationStatus === 'loading'
+                      ? 'Opening permission...'
+                      : notificationStatus === 'enabled'
+                        ? 'Notifications enabled'
+                        : 'Get notified'}
+                  </ThemedText>
+                  <ThemedText style={styles.primarySubtext}>Project updates and launch news</ThemedText>
+                </View>
               </AnimatedPressable>
             </View>
           </Animated.View>
@@ -360,24 +400,44 @@ const styles = StyleSheet.create({
     marginTop: Spacing.five,
   },
   primaryButton: {
-    minHeight: 54,
-    borderRadius: 27,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: Spacing.four,
+    minHeight: 68,
+    borderRadius: 34,
+    backgroundColor: '#246cff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+    paddingHorizontal: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 12,
+    shadowColor: '#246cff',
+    shadowOpacity: 0.55,
+    shadowRadius: 34,
+    shadowOffset: { width: 0, height: 18 },
+  },
+  primaryButtonEnabled: {
+    backgroundColor: '#12b981',
+    shadowColor: '#12b981',
+  },
+  buttonIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-    shadowColor: '#79a7ff',
-    shadowOpacity: 0.35,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 14 },
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   primaryText: {
-    color: '#06111f',
-    fontSize: 15,
-    lineHeight: 20,
+    color: '#ffffff',
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: '900',
+  },
+  primarySubtext: {
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.74,
