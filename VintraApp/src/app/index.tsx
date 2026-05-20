@@ -282,6 +282,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Admin';
   const activeChats = chats.filter((chat) => chat.status !== 'ai-active').length;
@@ -289,7 +290,19 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
   const unansweredChats = chats.filter((chat) => chat.status === 'needs-human');
   const servedChats = chats.filter((chat) => chat.status !== 'needs-human');
   const selectedChatFromList = chats.find((chat) => chat.id === selectedChatId);
-  const openChat = selectedChat || selectedChatFromList || chats[0] || null;
+  const activeChat = selectedChat || selectedChatFromList || null;
+  const openChat = compact ? activeChat : (activeChat || chats[0] || null);
+
+  function handleSelectChat(chatId: string) {
+    setSelectedChatId(chatId);
+    if (compact) {
+      setChatOpen(true);
+    }
+  }
+
+  function handleBackToList() {
+    setChatOpen(false);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -434,158 +447,171 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
 
   return (
     <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.dashboard}>
-      <View style={styles.dashboardHeader}>
-        <View style={styles.brandDark}>
-          <VintraMark />
-          <View>
-            <ThemedText style={styles.brandNameDark}>VINTRA</ThemedText>
-            <ThemedText style={styles.brandSublineDark}>Adminpanel</ThemedText>
+      {!(compact && chatOpen) && (
+        <>
+          <View style={styles.dashboardHeader}>
+            <View style={styles.brandDark}>
+              <VintraMark />
+              <View>
+                <ThemedText style={styles.brandNameDark}>VINTRA</ThemedText>
+                <ThemedText style={styles.brandSublineDark}>Adminpanel</ThemedText>
+              </View>
+            </View>
+            <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
+              <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#142033" />
+              {!compact && <ThemedText style={styles.logoutText}>Logg ut</ThemedText>}
+            </Pressable>
           </View>
-        </View>
-        <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
-          <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#142033" />
-          {!compact && <ThemedText style={styles.logoutText}>Logg ut</ThemedText>}
-        </Pressable>
-      </View>
 
-      <View style={styles.inboxHeader}>
-        <View style={styles.inboxHeaderTop}>
-          <View>
-            <ThemedText style={styles.inboxKicker}>Support inbox</ThemedText>
-            <ThemedText style={[styles.inboxTitle, compact && styles.inboxTitleCompact]}>Meldinger</ThemedText>
+          <View style={styles.inboxHeader}>
+            <View style={styles.inboxHeaderTop}>
+              <View>
+                <ThemedText style={styles.inboxKicker}>Support inbox</ThemedText>
+                <ThemedText style={[styles.inboxTitle, compact && styles.inboxTitleCompact]}>Meldinger</ThemedText>
+              </View>
+              <View style={styles.inboxPresence}>
+                <View style={styles.statusDotActive} />
+                <ThemedText style={styles.inboxPresenceText}>Live</ThemedText>
+              </View>
+            </View>
+            <ThemedText style={styles.inboxLead}>Hei {displayName}. Her svarer du på kundehenvendelser direkte fra samme Firebase som web-admin.</ThemedText>
+            <View style={styles.inboxMetrics}>
+              <InboxMetric label="Ubesvart" value={String(waitingChats)} active />
+              <InboxMetric label="Aktive" value={String(activeChats)} />
+              <InboxMetric label="Totalt" value={String(chats.length)} />
+            </View>
           </View>
-          <View style={styles.inboxPresence}>
-            <View style={styles.statusDotActive} />
-            <ThemedText style={styles.inboxPresenceText}>Live</ThemedText>
-          </View>
-        </View>
-        <ThemedText style={styles.inboxLead}>Hei {displayName}. Her svarer du på kundehenvendelser direkte fra samme Firebase som web-admin.</ThemedText>
-        <View style={styles.inboxMetrics}>
-          <InboxMetric label="Ubesvart" value={String(waitingChats)} active />
-          <InboxMetric label="Aktive" value={String(activeChats)} />
-          <InboxMetric label="Totalt" value={String(chats.length)} />
-        </View>
-      </View>
 
-      {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
+          {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
+        </>
+      )}
 
       <View style={[styles.supportLayout, compact && styles.supportLayoutCompact]}>
-        <View style={styles.conversationListPanel}>
-          <View style={styles.inboxTabs}>
-            <View style={styles.inboxTabActive}>
-              <ThemedText style={styles.inboxTabTextActive}>Active chats</ThemedText>
-              {waitingChats ? (
-                <View style={styles.tabBadge}>
-                  <ThemedText style={styles.tabBadgeText}>{waitingChats}</ThemedText>
-                </View>
-              ) : null}
+        {(!compact || !chatOpen) && (
+          <View style={[styles.conversationListPanel, compact && styles.conversationListPanelFull]}>
+            <View style={styles.inboxTabs}>
+              <View style={styles.inboxTabActive}>
+                <ThemedText style={styles.inboxTabTextActive}>Active chats</ThemedText>
+                {waitingChats ? (
+                  <View style={styles.tabBadge}>
+                    <ThemedText style={styles.tabBadgeText}>{waitingChats}</ThemedText>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.inboxTab}>
+                <ThemedText style={styles.inboxTabText}>AI / closed</ThemedText>
+              </View>
+              {chatsLoading ? <ActivityIndicator color="#246cff" /> : null}
             </View>
-            <View style={styles.inboxTab}>
-              <ThemedText style={styles.inboxTabText}>AI / closed</ThemedText>
-            </View>
-            {chatsLoading ? <ActivityIndicator color="#246cff" /> : null}
+
+            {!chatsLoading && !chats.length ? (
+              <View style={styles.emptyState}>
+                <ThemedText style={styles.emptyTitle}>Ingen samtaler ennå</ThemedText>
+                <ThemedText style={styles.emptyText}>Når en kunde ber om menneskelig support, dukker den opp her.</ThemedText>
+              </View>
+            ) : (
+              <View style={styles.conversationList}>
+                {unansweredChats.length ? <ConversationSection title="Unanswered" count={unansweredChats.length} urgent /> : null}
+                {unansweredChats.map((chat) => (
+                  <ConversationRow
+                    key={chat.id}
+                    chat={chat}
+                    active={chat.id === selectedChatId}
+                    onPress={() => handleSelectChat(chat.id)}
+                  />
+                ))}
+                {servedChats.length ? <ConversationSection title="Served" count={servedChats.length} /> : null}
+                {servedChats.map((chat) => (
+                  <ConversationRow
+                    key={chat.id}
+                    chat={chat}
+                    active={chat.id === selectedChatId}
+                    onPress={() => handleSelectChat(chat.id)}
+                  />
+                ))}
+              </View>
+            )}
           </View>
+        )}
 
-          {!chatsLoading && !chats.length ? (
-            <View style={styles.emptyState}>
-              <ThemedText style={styles.emptyTitle}>Ingen samtaler ennå</ThemedText>
-              <ThemedText style={styles.emptyText}>Når en kunde ber om menneskelig support, dukker den opp her.</ThemedText>
-            </View>
-          ) : (
-            <View style={styles.conversationList}>
-              {unansweredChats.length ? <ConversationSection title="Unanswered" count={unansweredChats.length} urgent /> : null}
-              {unansweredChats.map((chat) => (
-                <ConversationRow
-                  key={chat.id}
-                  chat={chat}
-                  active={chat.id === openChat?.id}
-                  onPress={() => setSelectedChatId(chat.id)}
-                />
-              ))}
-              {servedChats.length ? <ConversationSection title="Served" count={servedChats.length} /> : null}
-              {servedChats.map((chat) => (
-                <ConversationRow
-                  key={chat.id}
-                  chat={chat}
-                  active={chat.id === openChat?.id}
-                  onPress={() => setSelectedChatId(chat.id)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.chatPanel}>
-          {openChat ? (
-            <>
-              <View style={styles.chatHeader}>
-                <View style={styles.chatAvatar}>
-                  <ThemedText style={styles.chatAvatarText}>{(openChat.visitorName || 'K').slice(0, 1).toUpperCase()}</ThemedText>
-                </View>
-                <View style={styles.chatHeaderCopy}>
-                  <ThemedText style={styles.chatTitle}>{openChat.visitorName || 'Ukjent kunde'}</ThemedText>
-                  <ThemedText numberOfLines={1} style={styles.chatMeta}>
-                    {openChat.pageTitle || openChat.pageUrl || openChat.sessionId}
-                  </ThemedText>
-                </View>
-                <StatusPill status={openChat.status} />
-              </View>
-
-              <View style={styles.chatActionRow}>
-                <Pressable
-                  disabled={sending}
-                  onPress={() => handleStatusChange('open')}
-                  style={({ pressed }) => [styles.chatActionButton, openChat.status === 'open' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                  <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor={openChat.status === 'open' ? '#ffffff' : '#1d4ed8'} />
-                  <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>Ta over</ThemedText>
-                </Pressable>
-                <Pressable
-                  disabled={sending}
-                  onPress={() => handleStatusChange('ai-active')}
-                  style={({ pressed }) => [styles.chatActionButton, openChat.status === 'ai-active' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                  <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#1d4ed8'} />
-                  <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>AI</ThemedText>
-                </Pressable>
-              </View>
-
-              <View style={styles.messageList}>
-                {chatLoading ? (
-                  <ActivityIndicator color="#246cff" />
-                ) : (
-                  openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
-                )}
-              </View>
-
-              <View style={styles.replyBar}>
-                <TextInput
-                  multiline
-                  placeholder="Skriv svar til kunden..."
-                  placeholderTextColor="#7d8aa0"
-                  returnKeyType="send"
-                  style={styles.replyInput}
-                  value={reply}
-                  onChangeText={setReply}
-                  onSubmitEditing={handleSendReply}
-                />
-                <Pressable
-                  disabled={sending || !reply.trim()}
-                  onPress={handleSendReply}
-                  style={({ pressed }) => [styles.sendReplyButton, (sending || !reply.trim()) && styles.buttonDisabled, pressed && styles.pressed]}>
-                  {sending ? (
-                    <ActivityIndicator color="#ffffff" />
-                  ) : (
-                    <SymbolView name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }} size={20} tintColor="#ffffff" />
+        {(!compact || chatOpen) && (
+          <View style={[styles.chatPanel, compact && styles.chatPanelFull]}>
+            {openChat ? (
+              <>
+                <View style={styles.chatHeader}>
+                  {compact && (
+                    <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
+                      <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor="#111a2c" />
+                    </Pressable>
                   )}
-                </Pressable>
+                  <View style={styles.chatAvatar}>
+                    <ThemedText style={styles.chatAvatarText}>{(openChat.visitorName || 'K').slice(0, 1).toUpperCase()}</ThemedText>
+                  </View>
+                  <View style={styles.chatHeaderCopy}>
+                    <ThemedText style={styles.chatTitle}>{openChat.visitorName || 'Ukjent kunde'}</ThemedText>
+                    <ThemedText numberOfLines={1} style={styles.chatMeta}>
+                      {openChat.pageTitle || openChat.pageUrl || openChat.sessionId}
+                    </ThemedText>
+                  </View>
+                  <StatusPill status={openChat.status} />
+                </View>
+
+                <View style={styles.chatActionRow}>
+                  <Pressable
+                    disabled={sending}
+                    onPress={() => handleStatusChange('open')}
+                    style={({ pressed }) => [styles.chatActionButton, openChat.status === 'open' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor={openChat.status === 'open' ? '#ffffff' : '#1d4ed8'} />
+                    <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>Ta over</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    disabled={sending}
+                    onPress={() => handleStatusChange('ai-active')}
+                    style={({ pressed }) => [styles.chatActionButton, openChat.status === 'ai-active' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#1d4ed8'} />
+                    <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>AI</ThemedText>
+                  </Pressable>
+                </View>
+
+                <View style={styles.messageList}>
+                  {chatLoading ? (
+                    <ActivityIndicator color="#246cff" />
+                  ) : (
+                    openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
+                  )}
+                </View>
+
+                <View style={styles.replyBar}>
+                  <TextInput
+                    multiline
+                    placeholder="Skriv svar til kunden..."
+                    placeholderTextColor="#7d8aa0"
+                    returnKeyType="send"
+                    style={styles.replyInput}
+                    value={reply}
+                    onChangeText={setReply}
+                    onSubmitEditing={handleSendReply}
+                  />
+                  <Pressable
+                    disabled={sending || !reply.trim()}
+                    onPress={handleSendReply}
+                    style={({ pressed }) => [styles.sendReplyButton, (sending || !reply.trim()) && styles.buttonDisabled, pressed && styles.pressed]}>
+                    {sending ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <SymbolView name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }} size={20} tintColor="#ffffff" />
+                    )}
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <View style={styles.emptyState}>
+                <ThemedText style={styles.emptyTitle}>Velg en samtale</ThemedText>
+                <ThemedText style={styles.emptyText}>Åpne en chat fra listen for å lese meldinger og svare.</ThemedText>
               </View>
-            </>
-          ) : (
-            <View style={styles.emptyState}>
-              <ThemedText style={styles.emptyTitle}>Velg en samtale</ThemedText>
-              <ThemedText style={styles.emptyText}>Åpne en chat fra listen for å lese meldinger og svare.</ThemedText>
-            </View>
-          )}
-        </View>
+            )}
+          </View>
+        )}
       </View>
     </Animated.View>
   );
@@ -622,9 +648,22 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function avatarColor(name: string): string {
+  const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+  return colors[(name.charCodeAt(0) + (name.length || 0)) % colors.length];
+}
+
+function statusLabel(status: string): string {
+  if (status === 'needs-human') return 'New';
+  if (status === 'open') return 'Returning';
+  if (status === 'ai-active') return 'AI';
+  return 'Active';
+}
+
 function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active: boolean; onPress: () => void }) {
   const lastMessage = chat.messages.at(-1);
   const needsAnswer = chat.status === 'needs-human';
+  const label = statusLabel(chat.status);
 
   return (
     <Pressable
@@ -635,7 +674,12 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
         active && styles.conversationRowActive,
         pressed && styles.pressed,
       ]}>
-      <View style={[styles.conversationAvatar, needsAnswer && styles.conversationAvatarUrgent]}>
+      <View
+        style={[
+          styles.conversationAvatar,
+          needsAnswer && styles.conversationAvatarUrgent,
+          { backgroundColor: needsAnswer ? '#ef4444' : avatarColor(chat.visitorName || 'K') },
+        ]}>
         {needsAnswer ? (
           <SymbolView name={{ ios: 'phone.fill', android: 'call', web: 'call' }} size={18} tintColor="#ffffff" />
         ) : (
@@ -649,14 +693,20 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
           </ThemedText>
           <ThemedText style={styles.conversationTime}>{formatTime(chat.updatedAt)}</ThemedText>
         </View>
-        <ThemedText numberOfLines={1} style={styles.conversationSource}>
-          {chat.pageTitle || chat.countryCode || 'Vintra widget'}
-        </ThemedText>
-        <ThemedText numberOfLines={2} style={styles.conversationPreview}>
+        <View style={styles.conversationMiddle}>
+          <SymbolView name={{ ios: 'globe', android: 'language', web: 'language' }} size={10} tintColor="#94a3b8" />
+          <ThemedText numberOfLines={1} style={styles.conversationSource}>
+            {chat.pageTitle || chat.countryCode || 'vintranordic.com'}
+          </ThemedText>
+        </View>
+        <ThemedText numberOfLines={1} style={styles.conversationPreview}>
           {lastMessage?.text || chat.preview || 'Ingen melding ennå'}
         </ThemedText>
       </View>
-      {needsAnswer ? <View style={styles.unreadBadge} /> : null}
+      <View style={styles.conversationRight}>
+        <ThemedText style={[styles.conversationStatusLabel, needsAnswer && styles.conversationStatusLabelUrgent]}>{label}</ThemedText>
+        {needsAnswer ? <View style={styles.unreadBadge} /> : null}
+      </View>
     </Pressable>
   );
 }
@@ -961,9 +1011,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#111a2c',
-    shadowColor: '#111a2c',
-    shadowOpacity: 0.20,
+    backgroundColor: '#03a84e',
+    shadowColor: '#03a84e',
+    shadowOpacity: 0.30,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
@@ -975,6 +1025,8 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: '#ffffff',
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   formTitle: {
     color: '#111a2c',
@@ -1012,32 +1064,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   submitButton: {
-    minHeight: 68,
-    borderRadius: 24,
+    minHeight: 72,
+    borderRadius: 28,
     marginTop: Spacing.four,
     paddingHorizontal: Spacing.four,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#0b5cff',
-    borderWidth: 2,
+    backgroundColor: '#03a84e',
+    borderWidth: 3,
     borderColor: '#ffffff',
-    shadowColor: '#0b5cff',
-    shadowOpacity: 0.62,
-    shadowRadius: 34,
-    shadowOffset: { width: 0, height: 20 },
+    shadowColor: '#03a84e',
+    shadowOpacity: 0.75,
+    shadowRadius: 40,
+    shadowOffset: { width: 0, height: 24 },
+    elevation: 12,
   },
   submitButtonBusy: {
     opacity: 0.82,
   },
   submitText: {
     color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '900',
+    letterSpacing: 0.5,
   },
   dashboard: {
+    flex: 1,
     gap: Spacing.three,
   },
   dashboardHeader: {
@@ -1534,6 +1589,7 @@ const styles = StyleSheet.create({
   },
   supportLayoutCompact: {
     flexDirection: 'column',
+    flex: 1,
   },
   conversationListPanel: {
     flex: 0.8,
@@ -1544,6 +1600,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.75)',
     overflow: 'hidden',
+  },
+  conversationListPanelFull: {
+    flex: 1,
+    borderRadius: 0,
+    borderWidth: 0,
   },
   inboxTabs: {
     minHeight: 58,
@@ -1605,12 +1666,12 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   conversationRow: {
-    minHeight: 78,
-    paddingVertical: 12,
+    minHeight: 82,
+    paddingVertical: 14,
     paddingHorizontal: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#edf2f7',
@@ -1620,12 +1681,15 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ef4444',
   },
   conversationRowActive: {
-    backgroundColor: '#eef5ff',
+    backgroundColor: '#f0f9ff',
+    borderLeftWidth: 4,
+    borderLeftColor: '#03a84e',
+    paddingLeft: Spacing.three - 4,
   },
   conversationAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 18,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#111a2c',
@@ -1670,11 +1734,33 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   conversationSource: {
-    color: '#263449',
+    color: '#64748b',
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginTop: 2,
+  },
+  conversationMiddle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  conversationRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    minWidth: 52,
+  },
+  conversationStatusLabel: {
+    color: '#047857',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  conversationStatusLabelUrgent: {
+    color: '#ef4444',
   },
   conversationSection: {
     minHeight: 46,
@@ -1730,6 +1816,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.75)',
+  },
+  chatPanelFull: {
+    flex: 1,
+    borderRadius: 0,
+    borderWidth: 0,
+    padding: Spacing.three,
   },
   chatHeader: {
     minHeight: 62,
@@ -1822,7 +1914,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   messageList: {
-    minHeight: 360,
+    flex: 1,
     gap: 10,
     paddingVertical: Spacing.three,
   },
@@ -1921,6 +2013,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginTop: 6,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9',
+    marginRight: 4,
   },
   pressed: {
     opacity: 0.72,
