@@ -271,6 +271,29 @@ function AuthScreen({ compact }: { compact: boolean }) {
   );
 }
 
+function AdminBackground() {
+  const move = useSharedValue(0);
+
+  useEffect(() => {
+    move.value = withRepeat(withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.cubic) }), -1, true);
+  }, [move]);
+
+  const topBand = useAnimatedStyle(() => ({
+    transform: [{ translateX: -120 + move.value * 160 }, { rotateZ: '-12deg' }],
+  }));
+
+  const bottomBand = useAnimatedStyle(() => ({
+    transform: [{ translateX: 100 - move.value * 150 }, { rotateZ: '17deg' }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={styles.adminBackground}>
+      <Animated.View style={[styles.adminTopBand, topBand]} />
+      <Animated.View style={[styles.adminBottomBand, bottomBand]} />
+    </View>
+  );
+}
+
 function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
@@ -446,8 +469,10 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
   }
 
   return (
-    <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.dashboard}>
-      {!(compact && chatOpen) && (
+    <>
+      <AdminBackground />
+      <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.dashboard}>
+        {!(compact && chatOpen) && (
         <>
           <View style={styles.dashboardHeader}>
             <View style={styles.brandDark}>
@@ -614,6 +639,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
         )}
       </View>
     </Animated.View>
+    </>
   );
 }
 
@@ -2025,5 +2051,27 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
+  },
+  adminBackground: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  adminTopBand: {
+    position: 'absolute',
+    top: 110,
+    left: -170,
+    width: 620,
+    height: 170,
+    borderRadius: 42,
+    backgroundColor: 'rgba(3,168,78,0.15)',
+  },
+  adminBottomBand: {
+    position: 'absolute',
+    right: -220,
+    bottom: 80,
+    width: 680,
+    height: 210,
+    borderRadius: 52,
+    backgroundColor: 'rgba(36,108,255,0.20)',
   },
 });
