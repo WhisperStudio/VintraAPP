@@ -237,6 +237,22 @@ export async function sendSupportReply(businessId: string, chat: SupportChat, te
   });
 }
 
+export async function closeSupportChat(businessId: string, chat: SupportChat) {
+  const message = {
+    id: randomId(),
+    role: 'system',
+    text: 'The chat has been closed by an admin.',
+    createdAt: new Date(),
+  };
+
+  await updateDoc(doc(firebaseDb, `businesses/${businessId}/supportChats/${chat.id}`), {
+    status: 'closed',
+    updatedAt: serverTimestamp(),
+    messages: arrayUnion(message),
+    messageCount: increment(1),
+  });
+}
+
 export async function setSupportChatStatus(businessId: string, chat: SupportChat, status: 'open' | 'ai-active') {
   const isOpen = status === 'open';
   const message = {

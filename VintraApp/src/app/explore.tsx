@@ -11,9 +11,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { firebaseAuth } from '@/lib/firebase';
-import { listenSupportChats, type SupportChat } from '@/lib/admin-chat';
+import { listenSupportChats, resolveAdminProfile, type AdminProfile, type SupportChat } from '@/lib/admin-chat';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -58,23 +58,29 @@ export default function StatusScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 720;
-  const [user, setUser] = useState<User | null>(null);
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [chats, setChats] = useState<SupportChat[]>([]);
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
+    const unsubAuth = onAuthStateChanged(firebaseAuth, (u) => {
+      if (u) {
+        resolveAdminProfile(u).then(setAdminProfile).catch(() => setAdminProfile(null));
+      } else {
+        setAdminProfile(null);
+      }
+    });
     return () => unsubAuth();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    const unsub = listenSupportChats(user.uid, (c: SupportChat[]) => setChats(c), () => {});
+    if (!adminProfile) return;
+    const unsub = listenSupportChats(adminProfile.businessId, (c: SupportChat[]) => setChats(c), (err) => console.error('Error listening to chats:', err));
     return () => unsub();
-  }, [user]);
+  }, [adminProfile]);
 
   const totalChats = chats.length;
   const waitingChats = chats.filter((c) => c.status === 'needs-human').length;
-  const activeChats = chats.filter((c) => c.status === 'open').length;
+  const humanChats = chats.filter((c) => c.status === 'open').length;
   const aiChats = chats.filter((c) => c.status === 'ai-active').length;
   const totalMessages = chats.reduce((sum, c) => sum + c.messages.length, 0);
 
@@ -89,18 +95,18 @@ export default function StatusScreen() {
         ]}>
         <Animated.View entering={FadeInUp.delay(100).springify()} style={styles.center}>
           <View style={styles.iconBox}>
-            <SymbolView name={{ ios: 'chart.line.uptrend.xyaxis', android: 'insights', web: 'insights' }} size={28} tintColor="#ffffff" />
+            <SymbolView name={{ ios: 'chart.line.uptrend.xyaxis', android: 'insights', web: 'insights' }} size={26} tintColor="#ffffff" />
           </View>
           <ThemedText style={[styles.title, compact && styles.titleCompact]}>Status</ThemedText>
-          <ThemedText style={styles.lead}>
+          <ThemedText style={[styles.lead, compact && styles.leadCompact]}>
             Sanntidsoversikt over support-aktivitet og meldinger.
           </ThemedText>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(260).springify()} style={styles.statsGrid}>
           <StatusCard label="Totale samtaler" value={String(totalChats)} color="#03a84e" icon={{ ios: 'bubble.left.fill', android: 'chat_bubble', web: 'chat_bubble' } as any} />
-          <StatusCard label="Venter på svar" value={String(waitingChats)} color="#ef4444" icon={{ ios: 'phone.fill', android: 'call', web: 'call' } as any} />
-          <StatusCard label="Aktive samtaler" value={String(activeChats)} color="#3b82f6" icon={{ ios: 'person.2.fill', android: 'people', web: 'people' } as any} />
+          <StatusCard label="Venter på svar" value={String(waitingChats)} color="#ef4444" icon={{ ios: 'exclamationmark.bubble.fill', android: 'mark_chat_unread', web: 'mark_chat_unread' } as any} />
+          <StatusCard label="Menneskelig støtte" value={String(humanChats)} color="#3b82f6" icon={{ ios: 'person.fill', android: 'person', web: 'person' } as any} />
           <StatusCard label="AI-håndtert" value={String(aiChats)} color="#8b5cf6" icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' } as any} />
         </Animated.View>
 
@@ -122,19 +128,36 @@ export default function StatusScreen() {
 
         {chats.length > 0 ? (
           <Animated.View entering={FadeInDown.delay(380).springify()} style={styles.panel}>
-            <ThemedText style={styles.panelTitle}>Siste aktivitet</ThemedText>
-            {chats.slice(0, 3).map((chat) => {
+            <View style={styles.panelHeader}>
+              <View style={[styles.panelIcon, { backgroundColor: '#1e3a5f' }]}>
+                <SymbolView name={{ ios: 'clock.fill', android: 'history', web: 'history' }} size={22} tintColor="#ffffff" />
+              </View>
+              <View>
+                <ThemedText style={styles.panelTitle}>Siste aktivitet</ThemedText>
+                <ThemedText style={styles.panelMeta}>{chats.length} aktive samtaler</ThemedText>
+              </View>
+            </View>
+            {chats.slice(0, 5).map((chat, index) => {
               const lastMessage = chat.messages.at(-1);
+              const statusColor = chat.status === 'needs-human' ? '#ef4444' : chat.status === 'ai-active' ? '#8b5cf6' : '#03a84e';
+              const statusLabel = chat.status === 'needs-human' ? 'Venter' : chat.status === 'ai-active' ? 'AI' : 'Support';
               return (
-                <View key={chat.id} style={styles.activityRow}>
-                  <View style={[styles.activityDot, { backgroundColor: chat.status === 'needs-human' ? '#ef4444' : '#03a84e' }]} />
+                <View key={chat.id} style={[styles.activityRow, index === Math.min(chats.length, 5) - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={styles.activityAvatar}>
+                    <ThemedText style={styles.activityAvatarText}>{(chat.visitorName || 'U').slice(0, 1).toUpperCase()}</ThemedText>
+                  </View>
                   <View style={styles.activityContent}>
-                    <ThemedText style={styles.activityName}>{chat.visitorName || 'Ukjent'}</ThemedText>
+                    <ThemedText style={styles.activityName}>{chat.visitorName || 'Ukjent besøkende'}</ThemedText>
                     <ThemedText style={styles.activityMessage} numberOfLines={1}>
                       {lastMessage?.text || chat.preview || 'Ingen melding'}
                     </ThemedText>
                   </View>
-                  <ThemedText style={styles.activityTime}>{new Date(chat.updatedAt).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })}</ThemedText>
+                  <View style={styles.activityRight}>
+                    <View style={[styles.activityStatus, { backgroundColor: statusColor + '22', borderColor: statusColor + '55' }]}>
+                      <ThemedText style={[styles.activityStatusText, { color: statusColor }]}>{statusLabel}</ThemedText>
+                    </View>
+                    <ThemedText style={styles.activityTime}>{new Date(chat.updatedAt).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })}</ThemedText>
+                  </View>
                 </View>
               );
             })}
@@ -175,45 +198,48 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: 820,
+    maxWidth: 680,
     alignSelf: 'center',
-    justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   center: {
     alignItems: 'center',
   },
   iconBox: {
-    width: 68,
-    height: 68,
-    borderRadius: 24,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     backgroundColor: 'rgba(3,168,78,0.2)',
     borderWidth: 1,
     borderColor: 'rgba(3,168,78,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.three,
+    marginBottom: Spacing.two,
   },
   title: {
     color: '#ffffff',
-    fontSize: 52,
-    lineHeight: 57,
+    fontSize: 44,
+    lineHeight: 50,
     fontWeight: '900',
     textAlign: 'center',
   },
   titleCompact: {
-    fontSize: 38,
-    lineHeight: 42,
+    fontSize: 32,
+    lineHeight: 38,
   },
   lead: {
     color: '#bdc9dc',
-    fontSize: 18,
-    lineHeight: 29,
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: '700',
     textAlign: 'center',
-    maxWidth: 560,
-    marginTop: Spacing.three,
+    maxWidth: 480,
+    marginTop: Spacing.two,
+  },
+  leadCompact: {
+    fontSize: 14,
+    lineHeight: 20,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -315,8 +341,37 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  activityAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#246cff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityAvatarText: {
+    color: '#ffffff',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
   activityContent: {
     flex: 1,
+  },
+  activityRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  activityStatus: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  activityStatusText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900',
   },
   activityName: {
     color: '#ffffff',
@@ -332,9 +387,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   activityTime: {
-    color: '#7da8ff',
-    fontSize: 12,
-    lineHeight: 16,
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
   },
 });

@@ -1,9 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -14,8 +16,10 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
   FadeInDown,
   FadeInUp,
+  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -37,6 +41,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import {
   listenSupportChat,
+  closeSupportChat,
   listenSupportChats,
   resolveAdminProfile,
   sendSupportReply,
@@ -175,6 +180,7 @@ function AuthScreen({ compact }: { compact: boolean }) {
       } else {
         await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
       }
+      await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Kunne ikke logge inn akkurat nå.';
       Alert.alert(isRegister ? 'Registrering feilet' : 'Innlogging feilet', message);
@@ -294,31 +300,40 @@ function AdminBackground() {
   );
 }
 
-function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
+function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
+  const insets = useSafeAreaInsets();
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
   const [accessError, setAccessError] = useState('');
   const [chats, setChats] = useState<SupportChat[]>([]);
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(initialSelectedChatId ?? null);
   const [selectedChat, setSelectedChat] = useState<SupportChat | null>(null);
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const messageListRef = useRef<ScrollView>(null);
 
   const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Admin';
-  const activeChats = chats.filter((chat) => chat.status !== 'ai-active').length;
-  const waitingChats = chats.filter((chat) => chat.status === 'needs-human').length;
-  const unansweredChats = chats.filter((chat) => chat.status === 'needs-human');
-  const servedChats = chats.filter((chat) => chat.status !== 'needs-human');
-  const selectedChatFromList = chats.find((chat) => chat.id === selectedChatId);
+  const visibleChats = chats.filter((chat) => chat.status !== 'closed');
+  const activeChats = visibleChats.filter((chat) => chat.status !== 'ai-active').length;
+  const waitingChats = visibleChats.filter((chat) => chat.status === 'needs-human').length;
+  const unansweredChats = visibleChats.filter((chat) => chat.status === 'needs-human');
+  const servedChats = visibleChats.filter((chat) => chat.status !== 'needs-human');
+  const selectedChatFromList = visibleChats.find((chat) => chat.id === selectedChatId);
   const activeChat = selectedChat || selectedChatFromList || null;
-  const openChat = compact ? activeChat : (activeChat || chats[0] || null);
+  const openChat = compact ? activeChat : (activeChat || visibleChats[0] || null);
+
+  useEffect(() => {
+    if (openChat && messageListRef.current) {
+      setTimeout(() => messageListRef.current?.scrollToEnd({ animated: false }), 100);
+    }
+  }, [openChat?.id, openChat?.messages.length]);
 
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
     if (compact) {
+      onChatSelect?.(chatId);
       setChatOpen(true);
     }
   }
@@ -407,6 +422,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
 
   async function handleSignOut() {
     await signOut(firebaseAuth);
+    await AsyncStorage.removeItem('@vintra_creds');
   }
 
   async function handleSendReply() {
@@ -444,6 +460,30 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
     }
   }
 
+  function handleCloseChat() {
+    if (!adminProfile || !openChat) return;
+    Alert.alert(
+      'Lukk samtale',
+      `Lukke samtalen med ${openChat.visitorName || 'ukjent'}? Dette kan ikke angres.`,
+      [
+        { text: 'Avbryt', style: 'cancel' },
+        {
+          text: 'Lukk',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await closeSupportChat(adminProfile.businessId, openChat);
+              if (compact) setChatOpen(false);
+              else setSelectedChatId(null);
+            } catch (error) {
+              setAccessError(error instanceof Error ? error.message : 'Kunne ikke lukke samtalen.');
+            }
+          },
+        },
+      ],
+    );
+  }
+
   if (!adminReady) {
     return (
       <View style={styles.loadingState}>
@@ -471,7 +511,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
   return (
     <>
       <AdminBackground />
-      <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.dashboard}>
+      <Animated.View entering={FadeInUp.delay(80).springify()} style={[styles.dashboard, compact && chatOpen && styles.dashboardCompactOpen]}>
         {!(compact && chatOpen) && (
         <>
           <View style={styles.dashboardHeader}>
@@ -483,7 +523,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
               </View>
             </View>
             <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
-              <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#142033" />
+              <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#ffffff" />
               {!compact && <ThemedText style={styles.logoutText}>Logg ut</ThemedText>}
             </Pressable>
           </View>
@@ -560,13 +600,16 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
         )}
 
         {(!compact || chatOpen) && (
-          <View style={[styles.chatPanel, compact && styles.chatPanelFull]}>
+          <Animated.View 
+            entering={compact ? undefined : FadeInUp.duration(200)}
+            exiting={compact ? undefined : FadeOut.duration(150)}
+            style={[styles.chatPanel, compact && styles.chatPanelFull]}>
             {openChat ? (
               <>
-                <View style={styles.chatHeader}>
+                <View style={[styles.chatHeader, compact && { paddingTop: insets.top + 8 }]}>
                   {compact && (
                     <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-                      <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor="#111a2c" />
+                      <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor="#ffffff" />
                     </Pressable>
                   )}
                   <View style={styles.chatAvatar}>
@@ -586,25 +629,37 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
                     disabled={sending}
                     onPress={() => handleStatusChange('open')}
                     style={({ pressed }) => [styles.chatActionButton, openChat.status === 'open' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor={openChat.status === 'open' ? '#ffffff' : '#1d4ed8'} />
+                    <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor="#ffffff" />
                     <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>Ta over</ThemedText>
                   </Pressable>
                   <Pressable
                     disabled={sending}
                     onPress={() => handleStatusChange('ai-active')}
                     style={({ pressed }) => [styles.chatActionButton, openChat.status === 'ai-active' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#1d4ed8'} />
+                    <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor="#ffffff" />
                     <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>AI</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    disabled={sending}
+                    onPress={handleCloseChat}
+                    style={({ pressed }) => [styles.chatActionButton, styles.chatActionButtonClose, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }} size={16} tintColor="#ef4444" />
+                    <ThemedText style={styles.chatActionTextClose}>Lukk</ThemedText>
                   </Pressable>
                 </View>
 
-                <View style={styles.messageList}>
+                <ScrollView 
+                  ref={messageListRef}
+                  style={styles.messageList} 
+                  contentContainerStyle={[styles.messageListContent, { paddingBottom: 16 }]}
+                  showsVerticalScrollIndicator={false}
+                  onContentSizeChange={() => messageListRef.current?.scrollToEnd({ animated: false })}>
                   {chatLoading ? (
-                    <ActivityIndicator color="#246cff" />
+                    <ActivityIndicator color="#03a84e" />
                   ) : (
                     openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
                   )}
-                </View>
+                </ScrollView>
 
                 <View style={styles.replyBar}>
                   <TextInput
@@ -635,7 +690,7 @@ function AdminScreen({ user, compact }: { user: User; compact: boolean }) {
                 <ThemedText style={styles.emptyText}>Åpne en chat fra listen for å lese meldinger og svare.</ThemedText>
               </View>
             )}
-          </View>
+          </Animated.View>
         )}
       </View>
     </Animated.View>
@@ -690,6 +745,7 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
   const lastMessage = chat.messages.at(-1);
   const needsAnswer = chat.status === 'needs-human';
   const label = statusLabel(chat.status);
+  const avatarBg = needsAnswer ? '#ef4444' : avatarColor(chat.visitorName || 'K');
 
   return (
     <Pressable
@@ -703,8 +759,7 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
       <View
         style={[
           styles.conversationAvatar,
-          needsAnswer && styles.conversationAvatarUrgent,
-          { backgroundColor: needsAnswer ? '#ef4444' : avatarColor(chat.visitorName || 'K') },
+          { backgroundColor: avatarBg },
         ]}>
         {needsAnswer ? (
           <SymbolView name={{ ios: 'phone.fill', android: 'call', web: 'call' }} size={18} tintColor="#ffffff" />
@@ -719,19 +774,20 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
           </ThemedText>
           <ThemedText style={styles.conversationTime}>{formatTime(chat.updatedAt)}</ThemedText>
         </View>
+        <ThemedText numberOfLines={1} style={styles.conversationPreview}>
+          {lastMessage?.text || chat.preview || 'Ingen melding ennå'}
+        </ThemedText>
         <View style={styles.conversationMiddle}>
-          <SymbolView name={{ ios: 'globe', android: 'language', web: 'language' }} size={10} tintColor="#94a3b8" />
+          <SymbolView name={{ ios: 'globe', android: 'language', web: 'language' }} size={10} tintColor="#64748b" />
           <ThemedText numberOfLines={1} style={styles.conversationSource}>
             {chat.pageTitle || chat.countryCode || 'vintranordic.com'}
           </ThemedText>
         </View>
-        <ThemedText numberOfLines={1} style={styles.conversationPreview}>
-          {lastMessage?.text || chat.preview || 'Ingen melding ennå'}
-        </ThemedText>
       </View>
       <View style={styles.conversationRight}>
-        <ThemedText style={[styles.conversationStatusLabel, needsAnswer && styles.conversationStatusLabelUrgent]}>{label}</ThemedText>
-        {needsAnswer ? <View style={styles.unreadBadge} /> : null}
+        <View style={[styles.statusBadge, needsAnswer && styles.statusBadgeUrgent]}>
+          <ThemedText style={[styles.statusText, needsAnswer && styles.statusTextUrgent]}>{label}</ThemedText>
+        </View>
       </View>
     </Pressable>
   );
@@ -763,13 +819,26 @@ export default function HomeScreen() {
   const compact = width < 760;
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
-    return onAuthStateChanged(firebaseAuth, (currentUser) => {
+    const unsubAuth = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
     });
+    AsyncStorage.getItem('@vintra_creds').then((raw) => {
+      if (!raw) return;
+      const { email, password } = JSON.parse(raw) as { email: string; password: string };
+      if (!firebaseAuth.currentUser) {
+        signInWithEmailAndPassword(firebaseAuth, email, password).catch(() =>
+          AsyncStorage.removeItem('@vintra_creds'),
+        );
+      }
+    }).catch(() => {});
+    return unsubAuth;
   }, []);
+
+  const [selectedChatIdForModal, setSelectedChatIdForModal] = useState<string | null>(null);
 
   const contentPadding = useMemo(
     () => ({ paddingTop: insets.top + Spacing.three, paddingBottom: insets.bottom + BottomTabInset + Spacing.five }),
@@ -779,23 +848,71 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <AnimatedBackdrop />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.content, compact && styles.contentCompact, contentPadding]}>
+      {/* Normal admin list view - only when logged in and chat is not open on mobile */}
+      {authReady && user && !(compact && chatOpen) && (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[styles.content, compact && styles.contentCompact, contentPadding]}>
+            <AdminScreen
+              user={user}
+              compact={compact}
+              chatOpen={chatOpen}
+              setChatOpen={setChatOpen}
+              onChatSelect={setSelectedChatIdForModal}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
+
+      {/* Auth / loading modal — covers native tab bar */}
+      <Modal
+        visible={!authReady || (authReady && !user)}
+        animationType="none"
+        presentationStyle="fullScreen"
+        statusBarTranslucent>
+        <ThemedView style={styles.container}>
+          <AnimatedBackdrop />
           {!authReady ? (
             <View style={styles.loadingState}>
               <ActivityIndicator color="#ffffff" size="large" />
               <ThemedText style={styles.loadingText}>Klargjor Firebase...</ThemedText>
             </View>
-          ) : user ? (
-            <AdminScreen user={user} compact={compact} />
           ) : (
-            <AuthScreen compact={compact} />
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={[styles.content, compact && styles.contentCompact, contentPadding]}>
+                <AuthScreen compact={compact} />
+              </ScrollView>
+            </KeyboardAvoidingView>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </ThemedView>
+      </Modal>
+
+      {/* Chat full-screen modal — covers native tab bar */}
+      <Modal
+        visible={compact && chatOpen && !!user}
+        animationType="none"
+        presentationStyle="fullScreen"
+        statusBarTranslucent>
+        <ThemedView style={styles.container}>
+          <AnimatedBackdrop />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
+            {user && (
+              <AdminScreen
+                user={user}
+                compact={compact}
+                chatOpen={chatOpen}
+                setChatOpen={setChatOpen}
+                initialSelectedChatId={selectedChatIdForModal}
+              />
+            )}
+          </KeyboardAvoidingView>
+        </ThemedView>
+      </Modal>
     </ThemedView>
   );
 }
@@ -851,6 +968,9 @@ const styles = StyleSheet.create({
   },
   contentCompact: {
     paddingHorizontal: Spacing.three,
+  },
+  contentChatOpen: {
+    paddingHorizontal: 0,
   },
   loadingState: {
     flex: 1,
@@ -943,11 +1063,12 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   brandNameDark: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 17,
     lineHeight: 19,
     fontWeight: '900',
-    letterSpacing: 4,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   brandSubline: {
     color: '#9fb4d9',
@@ -958,10 +1079,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   brandSublineDark: {
-    color: '#75839a',
+    color: '#94a3b8',
     fontSize: 11,
     lineHeight: 15,
     fontWeight: '900',
+    letterSpacing: 1,
   },
   authTitle: {
     color: '#ffffff',
@@ -1120,17 +1242,22 @@ const styles = StyleSheet.create({
   dashboard: {
     flex: 1,
     gap: Spacing.three,
+    padding: Spacing.three,
+  },
+  dashboardCompactOpen: {
+    padding: 0,
+    gap: 0,
   },
   dashboardHeader: {
     minHeight: 66,
-    borderRadius: 28,
-    paddingHorizontal: Spacing.three,
+    borderRadius: 20,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.78)',
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   logoutButton: {
     minHeight: 44,
@@ -1139,10 +1266,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#eef3fb',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   logoutText: {
-    color: '#142033',
+    color: '#ffffff',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
@@ -1205,18 +1332,18 @@ const styles = StyleSheet.create({
     lineHeight: 38,
   },
   adminLead: {
-    color: '#5f6f86',
+    color: '#9fb1ce',
     fontSize: 17,
     lineHeight: 25,
     fontWeight: '700',
     marginTop: Spacing.two,
   },
   inboxHeader: {
-    borderRadius: 28,
-    padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 20,
+    padding: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.78)',
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   inboxHeaderTop: {
     flexDirection: 'row',
@@ -1225,14 +1352,14 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   inboxKicker: {
-    color: '#246cff',
+    color: '#03a84e',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   inboxTitle: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 42,
     lineHeight: 46,
     fontWeight: '900',
@@ -1243,10 +1370,10 @@ const styles = StyleSheet.create({
     lineHeight: 38,
   },
   inboxLead: {
-    color: '#65748d',
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '800',
+    color: '#9fb1ce',
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '700',
     marginTop: Spacing.two,
   },
   inboxPresence: {
@@ -1261,9 +1388,9 @@ const styles = StyleSheet.create({
     borderColor: '#b7f7d7',
   },
   inboxPresenceText: {
-    color: '#047857',
-    fontSize: 12,
-    lineHeight: 16,
+    color: '#03a84e',
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '900',
   },
   inboxMetrics: {
@@ -1272,37 +1399,36 @@ const styles = StyleSheet.create({
     marginTop: Spacing.three,
   },
   inboxMetric: {
-    flex: 1,
-    minHeight: 64,
-    borderRadius: 20,
-    paddingHorizontal: Spacing.three,
-    justifyContent: 'center',
-    backgroundColor: '#f3f7fc',
+    minHeight: 72,
+    borderRadius: 18,
+    padding: Spacing.three,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: '#e0e8f2',
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    gap: 4,
   },
   inboxMetricActive: {
-    backgroundColor: '#111a2c',
-    borderColor: '#111a2c',
+    backgroundColor: 'rgba(3,168,78,0.15)',
+    borderColor: 'rgba(3,168,78,0.30)',
   },
   inboxMetricValue: {
-    color: '#111a2c',
-    fontSize: 22,
-    lineHeight: 26,
+    color: '#ffffff',
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '900',
   },
   inboxMetricValueActive: {
-    color: '#ffffff',
+    color: '#03a84e',
   },
   inboxMetricLabel: {
-    color: '#65748d',
+    color: '#9fb1ce',
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: '900',
-    marginTop: 2,
+    fontWeight: '800',
   },
   inboxMetricLabelActive: {
-    color: '#c9d7ef',
+    color: '#03a84e',
   },
   addButton: {
     minHeight: 54,
@@ -1616,21 +1742,24 @@ const styles = StyleSheet.create({
   supportLayoutCompact: {
     flexDirection: 'column',
     flex: 1,
+    gap: 0,
   },
   conversationListPanel: {
     flex: 0.8,
     minWidth: 300,
-    borderRadius: 24,
+    borderRadius: 20,
     padding: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.75)',
+    borderColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden',
   },
   conversationListPanelFull: {
     flex: 1,
     borderRadius: 0,
     borderWidth: 0,
+    padding: 0,
+    margin: 0,
   },
   inboxTabs: {
     minHeight: 58,
@@ -1638,8 +1767,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 0,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    backgroundColor: '#fbfdff',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   inboxTabActive: {
     flex: 1,
@@ -1650,7 +1779,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
     borderBottomWidth: 3,
-    borderBottomColor: '#246cff',
+    borderBottomColor: '#03a84e',
   },
   inboxTab: {
     flex: 1,
@@ -1662,13 +1791,13 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   inboxTabTextActive: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
   },
   inboxTabText: {
-    color: '#77849a',
+    color: '#64748b',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
@@ -1692,46 +1821,45 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   conversationRow: {
-    minHeight: 82,
-    paddingVertical: 14,
-    paddingHorizontal: Spacing.three,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#ffffff',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'transparent',
     borderBottomWidth: 1,
-    borderBottomColor: '#edf2f7',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   conversationRowUrgent: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.10)',
   },
   conversationRowActive: {
-    backgroundColor: '#f0f9ff',
-    borderLeftWidth: 4,
+    backgroundColor: 'rgba(3,168,78,0.12)',
+    borderLeftWidth: 3,
     borderLeftColor: '#03a84e',
-    paddingLeft: Spacing.three - 4,
   },
   conversationAvatar: {
     width: 48,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111a2c',
+    backgroundColor: '#64748b',
   },
   conversationAvatarUrgent: {
     backgroundColor: '#ef4444',
   },
   conversationAvatarText: {
     color: '#ffffff',
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 22,
     fontWeight: '900',
   },
   conversationCopy: {
     flex: 1,
     minWidth: 0,
+    gap: 4,
   },
   conversationTop: {
     flexDirection: 'row',
@@ -1741,30 +1869,22 @@ const styles = StyleSheet.create({
   },
   conversationName: {
     flex: 1,
-    color: '#111a2c',
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '900',
+    color: '#ffffff',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '800',
   },
   conversationTime: {
-    color: '#7b889b',
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '900',
-  },
-  conversationPreview: {
-    color: '#64748b',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
-    marginTop: 3,
-  },
-  conversationSource: {
     color: '#64748b',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '700',
-    marginTop: 2,
+  },
+  conversationPreview: {
+    color: '#94a3b8',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   conversationMiddle: {
     flexDirection: 'row',
@@ -1772,21 +1892,44 @@ const styles = StyleSheet.create({
     gap: 5,
     marginTop: 4,
   },
+  conversationSource: {
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+  },
   conversationRight: {
     alignItems: 'flex-end',
     gap: 6,
-    minWidth: 52,
   },
   conversationStatusLabel: {
-    color: '#047857',
+    color: '#64748b',
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: '900',
+    fontWeight: '800',
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   conversationStatusLabelUrgent: {
     color: '#ef4444',
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#e2e8f0',
+  },
+  statusBadgeUrgent: {
+    backgroundColor: '#fee2e2',
+  },
+  statusText: {
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+  },
+  statusTextUrgent: {
+    color: '#dc2626',
   },
   conversationSection: {
     minHeight: 46,
@@ -1794,15 +1937,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#f4f6fa',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderBottomWidth: 1,
-    borderBottomColor: '#e6edf6',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   conversationSectionText: {
-    color: '#047857',
-    fontSize: 13,
-    lineHeight: 18,
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '900',
+    textTransform: 'uppercase' as const,
   },
   conversationSectionUrgent: {
     color: '#ef4444',
@@ -1836,34 +1980,49 @@ const styles = StyleSheet.create({
   },
   chatPanel: {
     flex: 1.2,
-    minWidth: 320,
-    borderRadius: 24,
-    padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    minWidth: 400,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.75)',
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
   },
   chatPanelFull: {
     flex: 1,
     borderRadius: 0,
     borderWidth: 0,
-    padding: Spacing.three,
+    padding: 0,
+    backgroundColor: '#06111f',
+    flexDirection: 'column',
+    minHeight: '100%',
   },
   chatHeader: {
-    minHeight: 62,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingBottom: Spacing.three,
     borderBottomWidth: 1,
-    borderBottomColor: '#e6edf6',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#0a1628',
   },
   chatActionRow: {
     flexDirection: 'row',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e6edf6',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#0a1628',
+  },
+  messageList: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  messageListContent: {
+    padding: 16,
+    flexGrow: 1,
+    gap: 10,
   },
   chatActionButton: {
     minHeight: 42,
@@ -1873,16 +2032,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#eef5ff',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: '#d5e5ff',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   chatActionButtonActive: {
-    backgroundColor: '#246cff',
-    borderColor: '#246cff',
+    backgroundColor: '#03a84e',
+    borderColor: '#03a84e',
+  },
+  chatActionButtonClose: {
+    marginLeft: 'auto',
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderColor: 'rgba(239,68,68,0.25)',
+  },
+  chatActionTextClose: {
+    color: '#ef4444',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
   },
   chatActionText: {
-    color: '#1d4ed8',
+    color: '#ffffff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '900',
@@ -1909,40 +2079,35 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   chatTitle: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 18,
     lineHeight: 23,
     fontWeight: '900',
   },
   chatMeta: {
-    color: '#65748d',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '800',
+    color: '#94a3b8',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
     marginTop: 2,
   },
   chatStatusPill: {
     minHeight: 34,
     borderRadius: 17,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    backgroundColor: '#eef3fb',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   chatStatusWaiting: {
-    backgroundColor: '#e8f0ff',
+    backgroundColor: 'rgba(239,68,68,0.15)',
   },
   chatStatusText: {
-    color: '#263449',
+    color: '#ffffff',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
-  },
-  messageList: {
-    flex: 1,
-    gap: 10,
-    paddingVertical: Spacing.three,
   },
   messageRow: {
     alignItems: 'flex-start',
@@ -1958,82 +2123,88 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: Spacing.three,
     paddingVertical: 12,
-    backgroundColor: '#eef3fb',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   messageBubbleAdmin: {
-    backgroundColor: '#246cff',
+    backgroundColor: '#03a84e',
   },
   messageBubbleSystem: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignSelf: 'center',
   },
   messageText: {
-    color: '#172033',
-    fontSize: 14,
-    lineHeight: 21,
+    color: '#ffffff',
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: '700',
   },
   messageTextAdmin: {
     color: '#ffffff',
   },
   messageTextSystem: {
-    color: '#9a3412',
-    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: 13,
+    lineHeight: 18,
   },
   messageTime: {
-    color: '#6b7890',
-    fontSize: 10,
+    color: '#64748b',
+    fontSize: 11,
     lineHeight: 14,
     fontWeight: '900',
     marginTop: 5,
   },
   messageTimeAdmin: {
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,255,255,0.80)',
   },
   replyBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: Spacing.two,
-    paddingTop: Spacing.three,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingBottom: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e6edf6',
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: '#0d1a2d',
   },
   replyInput: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 44,
     maxHeight: 120,
-    borderRadius: 18,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: 14,
-    color: '#111a2c',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#ffffff',
     fontSize: 15,
-    fontWeight: '700',
-    backgroundColor: '#f7faff',
+    lineHeight: 20,
+    fontWeight: '600',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-    borderColor: '#dce5f2',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   sendReplyButton: {
-    width: 54,
-    height: 54,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#246cff',
+    backgroundColor: '#03a84e',
   },
   emptyState: {
-    minHeight: 180,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Spacing.three,
+    padding: Spacing.five,
   },
   emptyTitle: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 19,
     lineHeight: 24,
     fontWeight: '900',
     textAlign: 'center',
   },
   emptyText: {
-    color: '#65748d',
+    color: '#94a3b8',
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '700',
@@ -2046,7 +2217,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     marginRight: 4,
   },
   pressed: {
@@ -2058,20 +2229,20 @@ const styles = StyleSheet.create({
   },
   adminTopBand: {
     position: 'absolute',
-    top: 110,
-    left: -170,
-    width: 620,
-    height: 170,
-    borderRadius: 42,
-    backgroundColor: 'rgba(3,168,78,0.15)',
+    top: -50,
+    left: -100,
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    backgroundColor: 'rgba(3,168,78,0.12)',
   },
   adminBottomBand: {
     position: 'absolute',
-    right: -220,
-    bottom: 80,
-    width: 680,
-    height: 210,
-    borderRadius: 52,
-    backgroundColor: 'rgba(36,108,255,0.20)',
+    right: -150,
+    bottom: -100,
+    width: 500,
+    height: 500,
+    borderRadius: 250,
+    backgroundColor: 'rgba(36,108,255,0.10)',
   },
 });
