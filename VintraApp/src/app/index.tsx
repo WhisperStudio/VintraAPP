@@ -285,6 +285,14 @@ function AdminBackground() {
     transform: [{ translateX: -120 + move.value * 160 }, { rotateZ: '-12deg' }],
   }));
 
+  const middleGlow = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -60 + move.value * 120 },
+      { translateX: 40 - move.value * 80 },
+      { scale: 0.95 + move.value * 0.15 }
+    ],
+  }));
+
   const bottomBand = useAnimatedStyle(() => ({
     transform: [{ translateX: 100 - move.value * 150 }, { rotateZ: '17deg' }],
   }));
@@ -292,6 +300,7 @@ function AdminBackground() {
   return (
     <View pointerEvents="none" style={styles.adminBackground}>
       <Animated.View style={[styles.adminTopBand, topBand]} />
+      <Animated.View style={[styles.adminMiddleGlow, middleGlow]} />
       <Animated.View style={[styles.adminBottomBand, bottomBand]} />
     </View>
   );
@@ -303,6 +312,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [adminReady, setAdminReady] = useState(false);
   const [accessError, setAccessError] = useState('');
   const [chats, setChats] = useState<SupportChat[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialSelectedChatId ?? null);
   const [selectedChat, setSelectedChat] = useState<SupportChat | null>(null);
   const [chatsLoading, setChatsLoading] = useState(false);
@@ -313,10 +323,19 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
   const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Agent';
   const visibleChats = chats.filter((chat) => chat.status !== 'closed');
+  
+  // Dynamic filtering based on search query
+  const filteredVisibleChats = visibleChats.filter((chat) => {
+    const visitorName = chat.visitorName || 'Visitor';
+    const lastMsg = chat.messages.at(-1)?.text || chat.preview || '';
+    return visitorName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           lastMsg.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
   const activeChats = visibleChats.filter((chat) => chat.status !== 'ai-active').length;
   const waitingChats = visibleChats.filter((chat) => chat.status === 'needs-human').length;
-  const unansweredChats = visibleChats.filter((chat) => chat.status === 'needs-human');
-  const servedChats = visibleChats.filter((chat) => chat.status !== 'needs-human');
+  const unansweredChats = filteredVisibleChats.filter((chat) => chat.status === 'needs-human');
+  const servedChats = filteredVisibleChats.filter((chat) => chat.status !== 'needs-human');
   const selectedChatFromList = visibleChats.find((chat) => chat.id === selectedChatId);
   const activeChat = selectedChat || selectedChatFromList || null;
   const openChat = compact ? activeChat : (activeChat || visibleChats[0] || null);
@@ -537,6 +556,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               </View>
             </View>
             <ThemedText style={styles.inboxLead}>Welcome, {displayName}. Here are the real-time messages from your Vintra widget.</ThemedText>
+
             <View style={styles.inboxMetrics}>
               <InboxMetric label="Waiting" value={String(waitingChats)} active />
               <InboxMetric label="Active" value={String(activeChats)} />
@@ -551,6 +571,24 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
       <View style={[styles.supportLayout, compact && styles.supportLayoutCompact]}>
         {(!compact || !chatOpen) && (
           <View style={[styles.conversationListPanel, compact && styles.conversationListPanelFull]}>
+            
+            {/* Highly Polished Search Bar */}
+            <View style={styles.searchBarContainer}>
+              <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={16} tintColor="#94a3b8" />
+              <TextInput
+                placeholder="Search visitors or messages..."
+                placeholderTextColor="#64748b"
+                style={styles.searchBarInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery ? (
+                <Pressable onPress={() => setSearchQuery('')}>
+                  <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={16} tintColor="#64748b" />
+                </Pressable>
+              ) : null}
+            </View>
+
             <View style={styles.inboxTabs}>
               <View style={styles.inboxTabActive}>
                 <ThemedText style={styles.inboxTabTextActive}>Active chats</ThemedText>
@@ -624,21 +662,27 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     onPress={() => handleStatusChange('open')}
                     style={({ pressed }) => [styles.chatActionButton, openChat.status === 'open' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
                     <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor="#ffffff" />
-                    <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>Ta over</ThemedText>
+                    <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>
+                      {compact ? 'Assign' : 'Assign to Me'}
+                    </ThemedText>
                   </Pressable>
                   <Pressable
                     disabled={sending}
                     onPress={() => handleStatusChange('ai-active')}
                     style={({ pressed }) => [styles.chatActionButton, openChat.status === 'ai-active' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
                     <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor="#ffffff" />
-                    <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>AI</ThemedText>
+                    <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>
+                      {compact ? 'AI Mode' : 'AI Assistant'}
+                    </ThemedText>
                   </Pressable>
                   <Pressable
                     disabled={sending}
                     onPress={handleCloseChat}
                     style={({ pressed }) => [styles.chatActionButton, styles.chatActionButtonClose, sending && styles.buttonDisabled, pressed && styles.pressed]}>
                     <SymbolView name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }} size={16} tintColor="#ef4444" />
-                    <ThemedText style={styles.chatActionTextClose}>Lukk</ThemedText>
+                    <ThemedText style={styles.chatActionTextClose}>
+                      {compact ? 'Close' : 'Close Chat'}
+                    </ThemedText>
                   </Pressable>
                 </View>
 
@@ -655,10 +699,30 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   )}
                 </ScrollView>
 
+                {/* Fancy Canned Responses Row */}
+                <View style={styles.templatesContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templatesScroll}>
+                    {[
+                      { text: '👋 Hello! How can I help you today?', value: 'Hello! How can I help you today?' },
+                      { text: '🔍 Let me check that for you...', value: 'Let me look into that for you. One moment, please.' },
+                      { text: '✅ Resolved!', value: 'I have resolved this request. Let me know if there is anything else I can do for you!' },
+                      { text: '📧 Contact Email', value: 'Could you please provide your email address so I can follow up on this request?' },
+                      { text: '🙏 Thank you!', value: 'Thank you for reaching out to us. Have an amazing day!' }
+                    ].map((item, i) => (
+                      <Pressable
+                        key={i}
+                        onPress={() => setReply(item.value)}
+                        style={({ pressed }) => [styles.templatePill, pressed && styles.pressed]}>
+                        <Text style={styles.templatePillText}>{item.text}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+
                 <View style={styles.replyBar}>
                   <TextInput
                     multiline
-                    placeholder="Skriv svar til kunden..."
+                    placeholder="Type a reply to visitor..."
                     placeholderTextColor="#7d8aa0"
                     returnKeyType="send"
                     style={styles.replyInput}
@@ -680,8 +744,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               </>
             ) : (
               <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyTitle}>Velg en samtale</ThemedText>
-                <ThemedText style={styles.emptyText}>Åpne en chat fra listen for å lese meldinger og svare.</ThemedText>
+                <ThemedText style={styles.emptyTitle}>Select a Conversation</ThemedText>
+                <ThemedText style={styles.emptyText}>Open a chat from the left pane to view messages and respond.</ThemedText>
               </View>
             )}
           </View>
@@ -693,10 +757,21 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 }
 
 function InboxMetric({ label, value, active }: { label: string; value: string; active?: boolean }) {
+  // Electric neon colors for different metrics
+  const neonColor = 
+    label === 'Waiting' ? '#ef4444' : 
+    label === 'Active' ? '#3b82f6' : '#00c7db';
+
   return (
-    <View style={[styles.inboxMetric, active && styles.inboxMetricActive]}>
-      <ThemedText style={[styles.inboxMetricValue, active && styles.inboxMetricValueActive]}>{value}</ThemedText>
-      <ThemedText style={[styles.inboxMetricLabel, active && styles.inboxMetricLabelActive]}>{label}</ThemedText>
+    <View style={[
+      styles.inboxMetric, 
+      active && styles.inboxMetricActive,
+      { borderColor: active ? neonColor + '80' : 'rgba(255,255,255,0.08)' }
+    ]}>
+      {/* Soft inner glow overlay */}
+      <View style={[styles.metricGlow, { backgroundColor: neonColor }]} />
+      <Text style={[styles.inboxMetricValue, { color: active ? neonColor : '#ffffff' }]}>{value}</Text>
+      <Text style={styles.inboxMetricLabel}>{label}</Text>
     </View>
   );
 }
@@ -741,6 +816,11 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
   const label = statusLabel(chat.status);
   const avatarBg = needsAnswer ? '#ef4444' : avatarColor(chat.visitorName || 'K');
 
+  // Custom colors for different badge states
+  const badgeColor = 
+    chat.status === 'needs-human' ? '#ef4444' : 
+    chat.status === 'ai-active' ? '#8b5cf6' : '#3b82f6';
+
   return (
     <Pressable
       onPress={onPress}
@@ -750,16 +830,14 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
         active && styles.conversationRowActive,
         pressed && styles.pressed,
       ]}>
-      <View
-        style={[
-          styles.conversationAvatar,
-          { backgroundColor: avatarBg },
-        ]}>
+      <View style={[styles.conversationAvatar, { backgroundColor: avatarBg }]}>
         {needsAnswer ? (
-          <SymbolView name={{ ios: 'phone.fill', android: 'call', web: 'call' }} size={18} tintColor="#ffffff" />
+          <SymbolView name={{ ios: 'phone.fill', android: 'call', web: 'call' }} size={16} tintColor="#ffffff" />
         ) : (
-          <ThemedText style={styles.conversationAvatarText}>{(chat.visitorName || 'K').slice(0, 1).toUpperCase()}</ThemedText>
+          <ThemedText style={styles.conversationAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</ThemedText>
         )}
+        {/* Neon Active Dot inside Avatar */}
+        <View style={[styles.avatarStatusDot, { backgroundColor: badgeColor }]} />
       </View>
       <View style={styles.conversationCopy}>
         <View style={styles.conversationTop}>
@@ -779,8 +857,12 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
         </View>
       </View>
       <View style={styles.conversationRight}>
-        <View style={[styles.statusBadge, needsAnswer && styles.statusBadgeUrgent]}>
-          <ThemedText style={[styles.statusText, needsAnswer && styles.statusTextUrgent]}>{label}</ThemedText>
+        {/* Glow-themed status badge */}
+        <View style={[
+          styles.statusBadge, 
+          { backgroundColor: badgeColor + '12', borderColor: badgeColor + '30' }
+        ]}>
+          <ThemedText style={[styles.statusText, { color: badgeColor }]}>{label}</ThemedText>
         </View>
       </View>
     </Pressable>
@@ -1301,6 +1383,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
   },
+  agentStatsMiniRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  agentStatMiniCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  agentStatMiniText: {
+    color: '#edf4ff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  searchBarContainer: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    height: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: Spacing.four,
+  },
+  searchBarInput: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    height: '100%',
+  },
   inboxHeaderTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1355,21 +1479,27 @@ const styles = StyleSheet.create({
     marginTop: Spacing.three,
   },
   inboxMetric: {
-    minHeight: 72,
+    flex: 1,
+    minHeight: 76,
     borderRadius: 18,
     padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    gap: 2,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  metricGlow: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
   },
   inboxMetricActive: {
-    backgroundColor: 'rgba(3,168,78,0.15)',
-    borderColor: 'rgba(3,168,78,0.30)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   inboxMetricValue: {
-    color: '#ffffff',
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '900',
@@ -1382,6 +1512,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800',
+    opacity: 0.85,
   },
   inboxMetricLabelActive: {
     color: '#03a84e',
@@ -1718,33 +1849,36 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   inboxTabs: {
-    minHeight: 58,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 24,
+    padding: 4,
+    gap: 4,
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
   },
   inboxTabActive: {
     flex: 1,
-    minHeight: 58,
-    paddingHorizontal: Spacing.three,
+    height: '100%',
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    borderBottomWidth: 3,
-    borderBottomColor: '#03a84e',
+    backgroundColor: '#1b2d42',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   inboxTab: {
     flex: 1,
-    minHeight: 58,
-    paddingHorizontal: Spacing.three,
+    height: '100%',
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
+    backgroundColor: 'transparent',
   },
   inboxTabTextActive: {
     color: '#ffffff',
@@ -1777,23 +1911,25 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   conversationRow: {
-    minHeight: 76,
+    minHeight: 82,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'transparent',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    marginBottom: 10,
   },
   conversationRowUrgent: {
-    backgroundColor: 'rgba(239,68,68,0.10)',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    borderColor: 'rgba(239, 68, 68, 0.15)',
   },
   conversationRowActive: {
-    backgroundColor: 'rgba(3,168,78,0.12)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#03a84e',
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    borderColor: 'rgba(59, 130, 246, 0.30)',
   },
   conversationAvatar: {
     width: 48,
@@ -1802,6 +1938,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#64748b',
+    position: 'relative',
+  },
+  avatarStatusDot: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    borderWidth: 2,
+    borderColor: '#06111f',
   },
   conversationAvatarUrgent: {
     backgroundColor: '#ef4444',
@@ -1871,18 +2018,19 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 8,
-    backgroundColor: '#e2e8f0',
+    borderWidth: 1,
   },
   statusBadgeUrgent: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: 'rgba(239,68,68,0.1)',
   },
   statusText: {
-    color: '#64748b',
     fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '800',
+    lineHeight: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statusTextUrgent: {
     color: '#dc2626',
@@ -2112,6 +2260,29 @@ const styles = StyleSheet.create({
   messageTimeAdmin: {
     color: 'rgba(255,255,255,0.80)',
   },
+  templatesContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#0a1424',
+  },
+  templatesScroll: {
+    gap: 8,
+  },
+  templatePill: {
+    backgroundColor: '#1b2d42',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  templatePillText: {
+    color: '#edf4ff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   replyBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -2191,6 +2362,15 @@ const styles = StyleSheet.create({
     height: 400,
     borderRadius: 200,
     backgroundColor: 'rgba(3,168,78,0.12)',
+  },
+  adminMiddleGlow: {
+    position: 'absolute',
+    top: '35%',
+    right: '15%',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(139,92,246,0.06)',
   },
   adminBottomBand: {
     position: 'absolute',
