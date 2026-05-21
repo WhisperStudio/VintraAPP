@@ -1,10 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, useWindowDimensions, View, Pressable, Alert } from 'react-native';
 import Animated, {
   Easing,
-  FadeInDown,
-  FadeInUp,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -41,16 +40,17 @@ function MovingBackground() {
   );
 }
 
-function SettingRow({ icon, label, description, value, onValueChange }: {
+function SettingRow({ icon, label, description, value, onValueChange, iconBg = '#246cff' }: {
   icon: any;
   label: string;
   description: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  iconBg?: string;
 }) {
   return (
     <View style={styles.settingRow}>
-      <View style={styles.settingIcon}>
+      <View style={[styles.settingIcon, { backgroundColor: iconBg }]}>
         <SymbolView name={icon} size={20} tintColor="#ffffff" />
       </View>
       <View style={styles.settingContent}>
@@ -60,9 +60,9 @@ function SettingRow({ icon, label, description, value, onValueChange }: {
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: '#2d3a4d', true: '#03a84e' }}
+        trackColor={{ false: '#1d2736', true: '#03a84e' }}
         thumbColor="#ffffff"
-        ios_backgroundColor="#2d3a4d"
+        ios_backgroundColor="#1d2736"
       />
     </View>
   );
@@ -77,17 +77,76 @@ export default function SettingsScreen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
 
+  // Load preferences on mount
   useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const notif = await AsyncStorage.getItem('@vintra_settings_notif');
+        const sound = await AsyncStorage.getItem('@vintra_settings_sound');
+        const vib = await AsyncStorage.getItem('@vintra_settings_vib');
+
+        if (notif !== null) setNotificationsEnabled(notif === 'true');
+        if (sound !== null) setSoundEnabled(sound === 'true');
+        if (vib !== null) setVibrationEnabled(vib === 'true');
+      } catch (e) {
+        console.error('Error loading settings', e);
+      }
+    };
+
+    loadSettings();
+
     const unsub = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  async function handleSignOut() {
+  // Setters persisting to AsyncStorage
+  const toggleNotifications = async (val: boolean) => {
+    setNotificationsEnabled(val);
     try {
-      await signOut(firebaseAuth);
-    } catch (error) {
-      console.error('Sign out error:', error);
+      await AsyncStorage.setItem('@vintra_settings_notif', String(val));
+    } catch (e) {
+      console.error(e);
     }
+  };
+
+  const toggleSound = async (val: boolean) => {
+    setSoundEnabled(val);
+    try {
+      await AsyncStorage.setItem('@vintra_settings_sound', String(val));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const toggleVibration = async (val: boolean) => {
+    setVibrationEnabled(val);
+    try {
+      await AsyncStorage.setItem('@vintra_settings_vib', String(val));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  async function handleSignOut() {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to log out of your Vintra account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem('@vintra_creds');
+              await signOut(firebaseAuth);
+            } catch (error) {
+              console.error('Sign out error:', error);
+            }
+          }
+        }
+      ]
+    );
   }
 
   return (
@@ -99,62 +158,74 @@ export default function SettingsScreen() {
           styles.content,
           { paddingTop: insets.top + Spacing.four, paddingBottom: insets.bottom + BottomTabInset + Spacing.five },
         ]}>
-        <Animated.View entering={FadeInUp.delay(100).springify()} style={styles.center}>
+        <View style={styles.center}>
           <View style={styles.iconBox}>
-            <SymbolView name={{ ios: 'gearshape.2.fill', android: 'settings', web: 'settings' }} size={28} tintColor="#ffffff" />
+            <SymbolView name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }} size={28} tintColor="#ffffff" />
           </View>
-          <ThemedText style={[styles.title, compact && styles.titleCompact]}>Innstillinger</ThemedText>
+          <ThemedText style={[styles.title, compact && styles.titleCompact]}>Settings</ThemedText>
           <ThemedText style={styles.lead}>
-            Tilpass notifikasjoner og lyd for support-varsler.
+            Customize notifications, sounds, and account details.
           </ThemedText>
-        </Animated.View>
+        </View>
 
-        <Animated.View entering={FadeInDown.delay(260).springify()} style={styles.panel}>
-          <ThemedText style={styles.sectionTitle}>Varsler</ThemedText>
+        <View style={styles.panel}>
+          <ThemedText style={styles.sectionTitle}>Notifications & Sound</ThemedText>
+          <View style={styles.divider} />
           
           <SettingRow
             icon={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
-            label="Notifikasjoner"
-            description="Varsler når noen ber om menneskelig support"
+            iconBg="#3b82f6"
+            label="Push Notifications"
+            description="Alert when visitors request live agent assistance"
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={toggleNotifications}
           />
           
           <SettingRow
             icon={{ ios: 'speaker.wave.2.fill', android: 'volume_up', web: 'volume_up' }}
-            label="Lydvarsler"
-            description="Avspill lyd når ny melding kommer"
+            iconBg="#03a84e"
+            label="Sound Effects"
+            description="Play sound for new incoming messages"
             value={soundEnabled}
-            onValueChange={setSoundEnabled}
+            onValueChange={toggleSound}
           />
           
           <SettingRow
-            icon={{ ios: 'iphone.gen2', android: 'vibration', web: 'vibration' }}
-            label="Vibrasjon"
-            description="Vibrer når ny melding kommer"
+            icon={{ ios: 'iphone.radiowaves.left.and.right', android: 'vibration', web: 'vibration' }}
+            iconBg="#8b5cf6"
+            label="Haptic Vibration"
+            description="Vibrate phone on newly received messages"
             value={vibrationEnabled}
-            onValueChange={setVibrationEnabled}
+            onValueChange={toggleVibration}
           />
-        </Animated.View>
+        </View>
 
         {user ? (
-          <Animated.View entering={FadeInDown.delay(320).springify()} style={styles.panel}>
-            <ThemedText style={styles.sectionTitle}>Konto</ThemedText>
+          <View style={styles.panel}>
+            <ThemedText style={styles.sectionTitle}>Account</ThemedText>
+            <View style={styles.divider} />
             <View style={styles.accountInfo}>
               <View style={styles.accountAvatar}>
-                <ThemedText style={styles.avatarText}>{(user.displayName || user.email || 'U').slice(0, 1).toUpperCase()}</ThemedText>
+                <ThemedText style={styles.avatarText}>{(user.displayName || user.email || 'A').slice(0, 1).toUpperCase()}</ThemedText>
               </View>
               <View>
-                <ThemedText style={styles.accountName}>{user.displayName || 'Admin'}</ThemedText>
+                <ThemedText style={styles.accountName}>{user.displayName || 'Vintra Agent'}</ThemedText>
                 <ThemedText style={styles.accountEmail}>{user.email}</ThemedText>
               </View>
             </View>
             <View style={styles.divider} />
-            <View style={styles.actionRow}>
-              <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={20} tintColor="#ef4444" />
-              <ThemedText style={styles.logoutText} onPress={handleSignOut}>Logg ut</ThemedText>
-            </View>
-          </Animated.View>
+            <Pressable
+              onPress={handleSignOut}
+              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
+              <View style={[styles.settingIcon, { backgroundColor: '#ef4444' }]}>
+                <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={20} tintColor="#ffffff" />
+              </View>
+              <View style={styles.settingContent}>
+                <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
+                <ThemedText style={styles.settingDescription}>Securely sign out of this device</ThemedText>
+              </View>
+            </Pressable>
+          </View>
         ) : null}
       </ScrollView>
     </ThemedView>
@@ -177,7 +248,7 @@ const styles = StyleSheet.create({
     width: 620,
     height: 170,
     borderRadius: 42,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   bottomBand: {
     position: 'absolute',
@@ -186,78 +257,76 @@ const styles = StyleSheet.create({
     width: 680,
     height: 210,
     borderRadius: 52,
-    backgroundColor: 'rgba(3,168,78,0.25)',
+    backgroundColor: 'rgba(3,168,78,0.12)',
   },
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: 820,
+    maxWidth: 620,
     alignSelf: 'center',
-    justifyContent: 'center',
     paddingHorizontal: Spacing.four,
     gap: Spacing.five,
   },
   center: {
     alignItems: 'center',
+    marginTop: Spacing.three,
   },
   iconBox: {
     width: 68,
     height: 68,
-    borderRadius: 24,
-    backgroundColor: 'rgba(3,168,78,0.2)',
+    borderRadius: 22,
+    backgroundColor: 'rgba(3,168,78,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(3,168,78,0.4)',
+    borderColor: 'rgba(3,168,78,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.three,
   },
   title: {
     color: '#ffffff',
-    fontSize: 52,
-    lineHeight: 57,
+    fontSize: 44,
+    lineHeight: 50,
     fontWeight: '900',
     textAlign: 'center',
   },
   titleCompact: {
-    fontSize: 38,
-    lineHeight: 42,
+    fontSize: 34,
+    lineHeight: 38,
   },
   lead: {
-    color: '#bdc9dc',
-    fontSize: 18,
-    lineHeight: 29,
+    color: '#9fb1ce',
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: '700',
     textAlign: 'center',
-    maxWidth: 560,
-    marginTop: Spacing.three,
+    maxWidth: 420,
+    marginTop: Spacing.two,
   },
   panel: {
-    borderRadius: 28,
-    padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 24,
+    padding: Spacing.four,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.08)',
     gap: Spacing.three,
   },
   sectionTitle: {
     color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 15,
     fontWeight: '900',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   settingIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#246cff',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -267,63 +336,60 @@ const styles = StyleSheet.create({
   settingLabel: {
     color: '#ffffff',
     fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   settingDescription: {
     color: '#9fb1ce',
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
   },
   accountInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
+    paddingVertical: Spacing.one,
   },
   accountAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     backgroundColor: '#03a84e',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 20,
     fontWeight: '900',
   },
   accountName: {
     color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
   },
   accountEmail: {
     color: '#9fb1ce',
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    marginVertical: Spacing.two,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: Spacing.one,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    paddingVertical: Spacing.two,
   },
   logoutText: {
     color: '#ef4444',
     fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '900',
+    fontWeight: '800',
+  },
+  pressed: {
+    opacity: 0.75,
   },
 });

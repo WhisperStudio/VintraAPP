@@ -1,10 +1,8 @@
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
-  FadeInDown,
-  FadeInUp,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -15,8 +13,6 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { firebaseAuth } from '@/lib/firebase';
 import { listenSupportChats, resolveAdminProfile, type AdminProfile, type SupportChat } from '@/lib/admin-chat';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 
 function MovingBackground() {
@@ -44,13 +40,15 @@ function MovingBackground() {
 
 function StatusCard({ label, value, color, icon }: { label: string; value: string; color: string; icon: any }) {
   return (
-    <Animated.View entering={FadeInUp} style={styles.statusCard}>
+    <View style={styles.statusCard}>
       <View style={[styles.statusIcon, { backgroundColor: color }]}>
         <SymbolView name={icon} size={20} tintColor="#ffffff" />
       </View>
-      <ThemedText style={styles.statusValue}>{value}</ThemedText>
-      <ThemedText style={styles.statusLabel}>{label}</ThemedText>
-    </Animated.View>
+      <View style={styles.statusCardContent}>
+        <Text style={styles.statusValue}>{value}</Text>
+        <Text style={styles.statusLabel}>{label}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -74,7 +72,11 @@ export default function StatusScreen() {
 
   useEffect(() => {
     if (!adminProfile) return;
-    const unsub = listenSupportChats(adminProfile.businessId, (c: SupportChat[]) => setChats(c), (err) => console.error('Error listening to chats:', err));
+    const unsub = listenSupportChats(
+      adminProfile.businessId,
+      (c: SupportChat[]) => setChats(c),
+      (err) => console.error('Error listening to chats:', err)
+    );
     return () => unsub();
   }, [adminProfile]);
 
@@ -85,7 +87,7 @@ export default function StatusScreen() {
   const totalMessages = chats.reduce((sum, c) => sum + c.messages.length, 0);
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={styles.container}>
       <MovingBackground />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -93,78 +95,82 @@ export default function StatusScreen() {
           styles.content,
           { paddingTop: insets.top + Spacing.four, paddingBottom: insets.bottom + BottomTabInset + Spacing.five },
         ]}>
-        <Animated.View entering={FadeInUp.delay(100).springify()} style={styles.center}>
+        <View style={styles.center}>
           <View style={styles.iconBox}>
-            <SymbolView name={{ ios: 'chart.line.uptrend.xyaxis', android: 'insights', web: 'insights' }} size={26} tintColor="#ffffff" />
+            <SymbolView name={{ ios: 'chart.bar.xaxis', android: 'insights', web: 'insights' }} size={26} tintColor="#ffffff" />
           </View>
-          <ThemedText style={[styles.title, compact && styles.titleCompact]}>Status</ThemedText>
-          <ThemedText style={[styles.lead, compact && styles.leadCompact]}>
-            Sanntidsoversikt over support-aktivitet og meldinger.
-          </ThemedText>
-        </Animated.View>
+          <Text style={[styles.title, compact && styles.titleCompact]}>Status</Text>
+          <Text style={[styles.lead, compact && styles.leadCompact]}>
+            Real-time overview of support activity, messages, and AI performance.
+          </Text>
+        </View>
 
-        <Animated.View entering={FadeInDown.delay(260).springify()} style={styles.statsGrid}>
-          <StatusCard label="Totale samtaler" value={String(totalChats)} color="#03a84e" icon={{ ios: 'bubble.left.fill', android: 'chat_bubble', web: 'chat_bubble' } as any} />
-          <StatusCard label="Venter på svar" value={String(waitingChats)} color="#ef4444" icon={{ ios: 'exclamationmark.bubble.fill', android: 'mark_chat_unread', web: 'mark_chat_unread' } as any} />
-          <StatusCard label="Menneskelig støtte" value={String(humanChats)} color="#3b82f6" icon={{ ios: 'person.fill', android: 'person', web: 'person' } as any} />
-          <StatusCard label="AI-håndtert" value={String(aiChats)} color="#8b5cf6" icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' } as any} />
-        </Animated.View>
+        <View style={styles.statsGrid}>
+          <StatusCard label="Total Chats" value={String(totalChats)} color="#03a84e" icon={{ ios: 'bubble.left.and.bubble.right.fill', android: 'chat_bubble', web: 'chat_bubble' } as any} />
+          <StatusCard label="Waiting Response" value={String(waitingChats)} color="#ef4444" icon={{ ios: 'exclamationmark.bubble.fill', android: 'mark_chat_unread', web: 'mark_chat_unread' } as any} />
+          <StatusCard label="Active Support" value={String(humanChats)} color="#3b82f6" icon={{ ios: 'person.fill', android: 'person', web: 'person' } as any} />
+          <StatusCard label="AI Managed" value={String(aiChats)} color="#8b5cf6" icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' } as any} />
+        </View>
 
-        <Animated.View entering={FadeInDown.delay(320).springify()} style={styles.panel}>
+        <View style={styles.panel}>
           <View style={styles.panelHeader}>
             <View style={styles.panelIcon}>
               <SymbolView name={{ ios: 'message.fill', android: 'chat', web: 'chat' }} size={22} tintColor="#ffffff" />
             </View>
             <View>
-              <ThemedText style={styles.panelTitle}>Meldingsstatistikk</ThemedText>
-              <ThemedText style={styles.panelMeta}>Totalt antall meldinger sendt</ThemedText>
+              <Text style={styles.panelTitle}>Message Statistics</Text>
+              <Text style={styles.panelMeta}>Total volume of messages exchanged</Text>
             </View>
           </View>
+          <View style={styles.divider} />
           <View style={styles.messageCount}>
-            <ThemedText style={styles.messageCountValue}>{totalMessages}</ThemedText>
-            <ThemedText style={styles.messageCountLabel}>meldinger</ThemedText>
+            <Text style={styles.messageCountValue}>{totalMessages}</Text>
+            <Text style={styles.messageCountLabel}>Messages Sent</Text>
           </View>
-        </Animated.View>
+        </View>
 
-        {chats.length > 0 ? (
-          <Animated.View entering={FadeInDown.delay(380).springify()} style={styles.panel}>
+        {chats.length > 0 && (
+          <View style={styles.panel}>
             <View style={styles.panelHeader}>
               <View style={[styles.panelIcon, { backgroundColor: '#1e3a5f' }]}>
-                <SymbolView name={{ ios: 'clock.fill', android: 'history', web: 'history' }} size={22} tintColor="#ffffff" />
+                <SymbolView name={{ ios: 'clock.fill', android: 'history', web: 'history' }} size={20} tintColor="#ffffff" />
               </View>
               <View>
-                <ThemedText style={styles.panelTitle}>Siste aktivitet</ThemedText>
-                <ThemedText style={styles.panelMeta}>{chats.length} aktive samtaler</ThemedText>
+                <Text style={styles.panelTitle}>Recent Activity</Text>
+                <Text style={styles.panelMeta}>{chats.length} active conversation{chats.length > 1 ? 's' : ''}</Text>
               </View>
             </View>
+            <View style={styles.divider} />
             {chats.slice(0, 5).map((chat, index) => {
               const lastMessage = chat.messages.at(-1);
               const statusColor = chat.status === 'needs-human' ? '#ef4444' : chat.status === 'ai-active' ? '#8b5cf6' : '#03a84e';
-              const statusLabel = chat.status === 'needs-human' ? 'Venter' : chat.status === 'ai-active' ? 'AI' : 'Support';
+              const statusLabel = chat.status === 'needs-human' ? 'Waiting' : chat.status === 'ai-active' ? 'AI' : 'Support';
               return (
                 <View key={chat.id} style={[styles.activityRow, index === Math.min(chats.length, 5) - 1 && { borderBottomWidth: 0 }]}>
                   <View style={styles.activityAvatar}>
-                    <ThemedText style={styles.activityAvatarText}>{(chat.visitorName || 'U').slice(0, 1).toUpperCase()}</ThemedText>
+                    <Text style={styles.activityAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
                   </View>
                   <View style={styles.activityContent}>
-                    <ThemedText style={styles.activityName}>{chat.visitorName || 'Ukjent besøkende'}</ThemedText>
-                    <ThemedText style={styles.activityMessage} numberOfLines={1}>
-                      {lastMessage?.text || chat.preview || 'Ingen melding'}
-                    </ThemedText>
+                    <Text style={styles.activityName}>{chat.visitorName || 'Visitor'}</Text>
+                    <Text style={styles.activityMessage} numberOfLines={1}>
+                      {lastMessage?.text || chat.preview || 'No messages yet'}
+                    </Text>
                   </View>
                   <View style={styles.activityRight}>
-                    <View style={[styles.activityStatus, { backgroundColor: statusColor + '22', borderColor: statusColor + '55' }]}>
-                      <ThemedText style={[styles.activityStatusText, { color: statusColor }]}>{statusLabel}</ThemedText>
+                    <View style={[styles.activityStatus, { backgroundColor: statusColor + '18', borderColor: statusColor + '30' }]}>
+                      <Text style={[styles.activityStatusText, { color: statusColor }]}>{statusLabel}</Text>
                     </View>
-                    <ThemedText style={styles.activityTime}>{new Date(chat.updatedAt).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })}</ThemedText>
+                    <Text style={styles.activityTime}>
+                      {new Date(chat.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
                   </View>
                 </View>
               );
             })}
-          </Animated.View>
-        ) : null}
+          </View>
+        )}
       </ScrollView>
-    </ThemedView>
+    </View>
   );
 }
 
@@ -184,7 +190,7 @@ const styles = StyleSheet.create({
     width: 620,
     height: 170,
     borderRadius: 42,
-    backgroundColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   bottomBand: {
     position: 'absolute',
@@ -193,29 +199,30 @@ const styles = StyleSheet.create({
     width: 680,
     height: 210,
     borderRadius: 52,
-    backgroundColor: 'rgba(3,168,78,0.25)',
+    backgroundColor: 'rgba(3,168,78,0.12)',
   },
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: 680,
+    maxWidth: 620,
     alignSelf: 'center',
     paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
   center: {
     alignItems: 'center',
+    marginTop: Spacing.three,
   },
   iconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    backgroundColor: 'rgba(3,168,78,0.2)',
+    width: 68,
+    height: 68,
+    borderRadius: 22,
+    backgroundColor: 'rgba(3,168,78,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(3,168,78,0.4)',
+    borderColor: 'rgba(3,168,78,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.two,
+    marginBottom: Spacing.three,
   },
   title: {
     color: '#ffffff',
@@ -225,16 +232,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   titleCompact: {
-    fontSize: 32,
+    fontSize: 34,
     lineHeight: 38,
   },
   lead: {
-    color: '#bdc9dc',
+    color: '#9fb1ce',
     fontSize: 16,
     lineHeight: 24,
     fontWeight: '700',
     textAlign: 'center',
-    maxWidth: 480,
+    maxWidth: 420,
     marginTop: Spacing.two,
   },
   leadCompact: {
@@ -246,17 +253,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: Spacing.three,
     justifyContent: 'space-between',
+    marginTop: Spacing.two,
   },
   statusCard: {
-    width: '48%',
-    minHeight: 120,
-    borderRadius: 24,
+    width: '47.5%',
+    borderRadius: 20,
     padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: Spacing.three,
   },
   statusIcon: {
     width: 44,
@@ -265,26 +273,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  statusCardContent: {
+    flex: 1,
+  },
   statusValue: {
     color: '#ffffff',
-    fontSize: 36,
-    lineHeight: 42,
+    fontSize: 24,
     fontWeight: '900',
   },
   statusLabel: {
     color: '#9fb1ce',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
   panel: {
-    borderRadius: 28,
-    padding: Spacing.three,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 24,
+    padding: Spacing.four,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.08)',
     gap: Spacing.three,
+    marginTop: Spacing.one,
   },
   panelHeader: {
     flexDirection: 'row',
@@ -292,41 +302,39 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   panelIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#246cff',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#3b82f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   panelTitle: {
     color: '#ffffff',
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
   },
   panelMeta: {
     color: '#9fb1ce',
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '800',
+    fontWeight: '600',
     marginTop: 2,
   },
   messageCount: {
     alignItems: 'center',
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.two,
   },
   messageCountValue: {
     color: '#ffffff',
-    fontSize: 56,
-    lineHeight: 64,
+    fontSize: 48,
     fontWeight: '900',
+    letterSpacing: -1,
   },
   messageCountLabel: {
     color: '#9fb1ce',
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: Spacing.one,
   },
   activityRow: {
     flexDirection: 'row',
@@ -334,25 +342,19 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingVertical: Spacing.two,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  activityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   activityAvatar: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#246cff',
+    backgroundColor: '#3b82f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   activityAvatarText: {
     color: '#ffffff',
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 14,
     fontWeight: '900',
   },
   activityContent: {
@@ -360,7 +362,7 @@ const styles = StyleSheet.create({
   },
   activityRight: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 6,
   },
   activityStatus: {
     borderRadius: 8,
@@ -369,27 +371,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   activityStatusText: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 10,
     fontWeight: '900',
+    textTransform: 'uppercase',
   },
   activityName: {
     color: '#ffffff',
     fontSize: 15,
-    lineHeight: 20,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   activityMessage: {
     color: '#9fb1ce',
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
   },
   activityTime: {
     color: '#64748b',
     fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: Spacing.one,
   },
 });
+

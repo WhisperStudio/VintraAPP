@@ -10,16 +10,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, {
   Easing,
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -152,7 +149,7 @@ function AuthField({
   );
 }
 
-function AuthScreen({ compact }: { compact: boolean }) {
+export function AuthScreen({ compact }: { compact: boolean }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -163,12 +160,12 @@ function AuthScreen({ compact }: { compact: boolean }) {
 
   async function submit() {
     if (!email.trim() || !password) {
-      Alert.alert('Mangler info', 'Fyll inn e-post og passord for å fortsette.');
+      Alert.alert('Missing info', 'Fill in email and password to continue.');
       return;
     }
 
     if (isRegister && !name.trim()) {
-      Alert.alert('Mangler navn', 'Skriv inn navnet ditt før du oppretter konto.');
+      Alert.alert('Missing name', 'Please enter your name before creating an account.');
       return;
     }
 
@@ -182,8 +179,8 @@ function AuthScreen({ compact }: { compact: boolean }) {
       }
       await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Kunne ikke logge inn akkurat nå.';
-      Alert.alert(isRegister ? 'Registrering feilet' : 'Innlogging feilet', message);
+      const message = error instanceof Error ? error.message : 'Could not sign in at this moment.';
+      Alert.alert(isRegister ? 'Registration failed' : 'Sign in failed', message);
     } finally {
       setBusy(false);
     }
@@ -191,41 +188,41 @@ function AuthScreen({ compact }: { compact: boolean }) {
 
   return (
     <View style={[styles.authLayout, compact && styles.authLayoutCompact]}>
-      <Animated.View entering={FadeInUp.delay(120).springify()} style={styles.authIntro}>
+      <View style={styles.authIntro}>
         <View style={styles.brand}>
           <VintraMark light />
           <View>
             <ThemedText style={styles.brandName}>VINTRA</ThemedText>
-            <ThemedText style={styles.brandSubline}>Nordisk digitalstudio</ThemedText>
+            <ThemedText style={styles.brandSubline}>Nordic digital studio</ThemedText>
           </View>
         </View>
-        <ThemedText style={[styles.authTitle, compact && styles.authTitleCompact]}>Admin kontroll for hele Vintra.</ThemedText>
+        <ThemedText style={[styles.authTitle, compact && styles.authTitleCompact]}>Sign In</ThemedText>
         <ThemedText style={styles.authLead}>
-          Logg inn for å styre chat-widgets, nettsider, oppgaver og support fra et panel laget for mobilen først.
+          Respond to inquiries from your Vintra widget. Log in to view messages and assist visitors in real-time.
         </ThemedText>
         <View style={styles.featureGrid}>
-          {['Live widgets', 'Sikre brukere', 'Mobil admin'].map((item) => (
+          {['Live chat', 'Support', 'Vintra'].map((item) => (
             <View key={item} style={styles.featurePill}>
               <View style={styles.liveDot} />
               <ThemedText style={styles.featureText}>{item}</ThemedText>
             </View>
           ))}
         </View>
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInDown.delay(220).springify()} style={styles.authCard}>
+      <View style={styles.authCard}>
         <View style={styles.segment}>
           <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
-            <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>Login</ThemedText>
+            <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>Sign In</ThemedText>
           </Pressable>
           <Pressable onPress={() => setMode('register')} style={[styles.segmentButton, isRegister && styles.segmentActive]}>
             <ThemedText style={[styles.segmentText, isRegister && styles.segmentTextActive]}>Register</ThemedText>
           </Pressable>
         </View>
 
-        <ThemedText style={styles.formTitle}>{isRegister ? 'Opprett adminbruker' : 'Velkommen tilbake'}</ThemedText>
+        <ThemedText style={styles.formTitle}>{isRegister ? 'Create Account' : 'Sign In'}</ThemedText>
         <ThemedText style={styles.formLead}>
-          {isRegister ? 'Lag en konto koblet til Firebase Auth.' : 'Logg inn med Firebase-kontoen din.'}
+          {isRegister ? 'Create an account to respond to inquiries.' : 'Enter your email and password to continue.'}
         </ThemedText>
 
         <View style={styles.form}>
@@ -233,7 +230,7 @@ function AuthScreen({ compact }: { compact: boolean }) {
             <AuthField
               icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
               autoComplete="name"
-              placeholder="Fullt navn"
+              placeholder="Full name"
               returnKeyType="next"
               value={name}
               onChangeText={setName}
@@ -242,7 +239,7 @@ function AuthScreen({ compact }: { compact: boolean }) {
           <AuthField
             icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
             autoComplete="email"
-            placeholder="E-post"
+            placeholder="Email"
             returnKeyType="next"
             value={email}
             onChangeText={setEmail}
@@ -250,7 +247,7 @@ function AuthScreen({ compact }: { compact: boolean }) {
           <AuthField
             icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
             autoComplete="password"
-            placeholder="Passord"
+            placeholder="Password"
             returnKeyType="done"
             secureTextEntry
             value={password}
@@ -259,7 +256,7 @@ function AuthScreen({ compact }: { compact: boolean }) {
           />
         </View>
 
-        <AnimatedPressable
+        <Pressable
           onPress={submit}
           disabled={busy}
           style={({ pressed }) => [styles.submitButton, busy && styles.submitButtonBusy, pressed && styles.pressed]}>
@@ -267,12 +264,12 @@ function AuthScreen({ compact }: { compact: boolean }) {
             <ActivityIndicator color="#ffffff" />
           ) : (
             <>
-              <ThemedText style={styles.submitText}>{isRegister ? 'Opprett konto' : 'Logg inn'}</ThemedText>
+              <Text style={styles.submitText}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
               <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={19} tintColor="#ffffff" />
             </>
           )}
-        </AnimatedPressable>
-      </Animated.View>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -314,7 +311,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [sending, setSending] = useState(false);
   const messageListRef = useRef<ScrollView>(null);
 
-  const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Admin';
+  const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Agent';
   const visibleChats = chats.filter((chat) => chat.status !== 'closed');
   const activeChats = visibleChats.filter((chat) => chat.status !== 'ai-active').length;
   const waitingChats = visibleChats.filter((chat) => chat.status === 'needs-human').length;
@@ -359,7 +356,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         setAdminReady(true);
 
         if (!profile) {
-          setAccessError('Denne brukeren har ikke admin-tilgang til en Vintra-bedrift.');
+          setAccessError('This account does not have access to live inquiries yet.');
         }
       })
       .catch((error) => {
@@ -367,7 +364,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
           return;
         }
 
-        setAccessError(error instanceof Error ? error.message : 'Kunne ikke sjekke admin-tilgang.');
+        setAccessError(error instanceof Error ? error.message : 'Could not check account access.');
         setAdminReady(true);
       });
 
@@ -437,7 +434,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
       await sendSupportReply(adminProfile.businessId, openChat, reply, adminProfile);
       setReply('');
     } catch (error) {
-      setAccessError(error instanceof Error ? error.message : 'Kunne ikke sende svar.');
+      setAccessError(error instanceof Error ? error.message : 'Could not send reply.');
     } finally {
       setSending(false);
     }
@@ -454,7 +451,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     try {
       await setSupportChatStatus(adminProfile.businessId, openChat, status);
     } catch (error) {
-      setAccessError(error instanceof Error ? error.message : 'Kunne ikke oppdatere status.');
+      setAccessError(error instanceof Error ? error.message : 'Could not update status.');
     } finally {
       setSending(false);
     }
@@ -463,12 +460,12 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   function handleCloseChat() {
     if (!adminProfile || !openChat) return;
     Alert.alert(
-      'Lukk samtale',
-      `Lukke samtalen med ${openChat.visitorName || 'ukjent'}? Dette kan ikke angres.`,
+      'Close Conversation',
+      `Close the conversation with ${openChat.visitorName || 'visitor'}? This cannot be undone.`,
       [
-        { text: 'Avbryt', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Lukk',
+          text: 'Close',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -476,7 +473,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               if (compact) setChatOpen(false);
               else setSelectedChatId(null);
             } catch (error) {
-              setAccessError(error instanceof Error ? error.message : 'Kunne ikke lukke samtalen.');
+              setAccessError(error instanceof Error ? error.message : 'Could not close conversation.');
             }
           },
         },
@@ -488,30 +485,30 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     return (
       <View style={styles.loadingState}>
         <ActivityIndicator color="#ffffff" size="large" />
-        <ThemedText style={styles.loadingText}>Sjekker admin-tilgang...</ThemedText>
+        <ThemedText style={styles.loadingText}>Checking access...</ThemedText>
       </View>
     );
   }
 
   if (!adminProfile) {
     return (
-      <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.noAccessCard}>
+      <View style={styles.noAccessCard}>
         <View style={styles.noAccessIcon}>
           <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={24} tintColor="#ffffff" />
         </View>
-        <ThemedText style={styles.noAccessTitle}>Ingen tilgang</ThemedText>
-        <ThemedText style={styles.noAccessText}>{accessError || 'Du må være admin for å åpne dette panelet.'}</ThemedText>
+        <ThemedText style={styles.noAccessTitle}>Access Denied</ThemedText>
+        <ThemedText style={styles.noAccessText}>{accessError || 'You do not have permission to view messages yet.'}</ThemedText>
         <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.noAccessButton, pressed && styles.pressed]}>
-          <ThemedText style={styles.noAccessButtonText}>Logg ut</ThemedText>
+          <ThemedText style={styles.noAccessButtonText}>Sign Out</ThemedText>
         </Pressable>
-      </Animated.View>
+      </View>
     );
   }
 
   return (
     <>
       <AdminBackground />
-      <Animated.View entering={FadeInUp.delay(80).springify()} style={[styles.dashboard, compact && chatOpen && styles.dashboardCompactOpen]}>
+      <View style={[styles.dashboard, compact && chatOpen && styles.dashboardCompactOpen]}>
         {!(compact && chatOpen) && (
         <>
           <View style={styles.dashboardHeader}>
@@ -519,31 +516,31 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               <VintraMark />
               <View>
                 <ThemedText style={styles.brandNameDark}>VINTRA</ThemedText>
-                <ThemedText style={styles.brandSublineDark}>Adminpanel</ThemedText>
+                <ThemedText style={styles.brandSublineDark}>Live Inbox</ThemedText>
               </View>
             </View>
             <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
               <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#ffffff" />
-              {!compact && <ThemedText style={styles.logoutText}>Logg ut</ThemedText>}
+              {!compact && <ThemedText style={styles.logoutText}>Sign Out</ThemedText>}
             </Pressable>
           </View>
 
           <View style={styles.inboxHeader}>
             <View style={styles.inboxHeaderTop}>
               <View>
-                <ThemedText style={styles.inboxKicker}>Support inbox</ThemedText>
-                <ThemedText style={[styles.inboxTitle, compact && styles.inboxTitleCompact]}>Meldinger</ThemedText>
+                <ThemedText style={styles.inboxKicker}>Incoming Inquiries</ThemedText>
+                <ThemedText style={[styles.inboxTitle, compact && styles.inboxTitleCompact]}>Messages</ThemedText>
               </View>
               <View style={styles.inboxPresence}>
                 <View style={styles.statusDotActive} />
                 <ThemedText style={styles.inboxPresenceText}>Live</ThemedText>
               </View>
             </View>
-            <ThemedText style={styles.inboxLead}>Hei {displayName}. Her svarer du på kundehenvendelser direkte fra samme Firebase som web-admin.</ThemedText>
+            <ThemedText style={styles.inboxLead}>Welcome, {displayName}. Here are the real-time messages from your Vintra widget.</ThemedText>
             <View style={styles.inboxMetrics}>
-              <InboxMetric label="Ubesvart" value={String(waitingChats)} active />
-              <InboxMetric label="Aktive" value={String(activeChats)} />
-              <InboxMetric label="Totalt" value={String(chats.length)} />
+              <InboxMetric label="Waiting" value={String(waitingChats)} active />
+              <InboxMetric label="Active" value={String(activeChats)} />
+              <InboxMetric label="Total" value={String(chats.length)} />
             </View>
           </View>
 
@@ -571,8 +568,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
             {!chatsLoading && !chats.length ? (
               <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyTitle}>Ingen samtaler ennå</ThemedText>
-                <ThemedText style={styles.emptyText}>Når en kunde ber om menneskelig support, dukker den opp her.</ThemedText>
+                <ThemedText style={styles.emptyTitle}>No conversations yet</ThemedText>
+                <ThemedText style={styles.emptyText}>When visitors ask for help on your website, they will appear right here.</ThemedText>
               </View>
             ) : (
               <View style={styles.conversationList}>
@@ -600,10 +597,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         )}
 
         {(!compact || chatOpen) && (
-          <Animated.View 
-            entering={compact ? undefined : FadeInUp.duration(200)}
-            exiting={compact ? undefined : FadeOut.duration(150)}
-            style={[styles.chatPanel, compact && styles.chatPanelFull]}>
+          <View style={[styles.chatPanel, compact && styles.chatPanelFull]}>
             {openChat ? (
               <>
                 <View style={[styles.chatHeader, compact && { paddingTop: insets.top + 8 }]}>
@@ -613,10 +607,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     </Pressable>
                   )}
                   <View style={styles.chatAvatar}>
-                    <ThemedText style={styles.chatAvatarText}>{(openChat.visitorName || 'K').slice(0, 1).toUpperCase()}</ThemedText>
+                    <ThemedText style={styles.chatAvatarText}>{(openChat.visitorName || 'V').slice(0, 1).toUpperCase()}</ThemedText>
                   </View>
                   <View style={styles.chatHeaderCopy}>
-                    <ThemedText style={styles.chatTitle}>{openChat.visitorName || 'Ukjent kunde'}</ThemedText>
+                    <ThemedText style={styles.chatTitle}>{openChat.visitorName || 'Visitor'}</ThemedText>
                     <ThemedText numberOfLines={1} style={styles.chatMeta}>
                       {openChat.pageTitle || openChat.pageUrl || openChat.sessionId}
                     </ThemedText>
@@ -690,10 +684,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 <ThemedText style={styles.emptyText}>Åpne en chat fra listen for å lese meldinger og svare.</ThemedText>
               </View>
             )}
-          </Animated.View>
+          </View>
         )}
       </View>
-    </Animated.View>
+    </View>
     </>
   );
 }
@@ -719,7 +713,7 @@ function ConversationSection({ title, count, urgent }: { title: string; count: n
 }
 
 function StatusPill({ status }: { status: string }) {
-  const label = status === 'needs-human' ? 'Venter' : status === 'open' ? 'Åpen' : status === 'ai-active' ? 'AI' : status;
+  const label = status === 'needs-human' ? 'Waiting' : status === 'open' ? 'Active' : status === 'ai-active' ? 'AI' : status;
 
   return (
     <View style={[styles.chatStatusPill, status === 'needs-human' && styles.chatStatusWaiting]}>
@@ -770,12 +764,12 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
       <View style={styles.conversationCopy}>
         <View style={styles.conversationTop}>
           <ThemedText numberOfLines={1} style={styles.conversationName}>
-            {chat.visitorName || 'Ukjent kunde'}
+            {chat.visitorName || 'Visitor'}
           </ThemedText>
           <ThemedText style={styles.conversationTime}>{formatTime(chat.updatedAt)}</ThemedText>
         </View>
         <ThemedText numberOfLines={1} style={styles.conversationPreview}>
-          {lastMessage?.text || chat.preview || 'Ingen melding ennå'}
+          {lastMessage?.text || chat.preview || 'No messages yet'}
         </ThemedText>
         <View style={styles.conversationMiddle}>
           <SymbolView name={{ ios: 'globe', android: 'language', web: 'language' }} size={10} tintColor="#64748b" />
@@ -818,24 +812,12 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const compact = width < 760;
   const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(firebaseAuth, (currentUser) => {
+    return onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
-      setAuthReady(true);
     });
-    AsyncStorage.getItem('@vintra_creds').then((raw) => {
-      if (!raw) return;
-      const { email, password } = JSON.parse(raw) as { email: string; password: string };
-      if (!firebaseAuth.currentUser) {
-        signInWithEmailAndPassword(firebaseAuth, email, password).catch(() =>
-          AsyncStorage.removeItem('@vintra_creds'),
-        );
-      }
-    }).catch(() => {});
-    return unsubAuth;
   }, []);
 
   const [selectedChatIdForModal, setSelectedChatIdForModal] = useState<string | null>(null);
@@ -845,11 +827,13 @@ export default function HomeScreen() {
     [insets.bottom, insets.top],
   );
 
+  if (!user) return null;
+
   return (
     <ThemedView style={styles.container}>
       <AnimatedBackdrop />
-      {/* Normal admin list view - only when logged in and chat is not open on mobile */}
-      {authReady && user && !(compact && chatOpen) && (
+      {/* Normal admin list view - chat not open on mobile */}
+      {!(compact && chatOpen) && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -866,42 +850,17 @@ export default function HomeScreen() {
         </KeyboardAvoidingView>
       )}
 
-      {/* Auth / loading modal — covers native tab bar */}
-      <Modal
-        visible={!authReady || (authReady && !user)}
-        animationType="none"
-        presentationStyle="fullScreen"
-        statusBarTranslucent>
-        <ThemedView style={styles.container}>
-          <AnimatedBackdrop />
-          {!authReady ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator color="#ffffff" size="large" />
-              <ThemedText style={styles.loadingText}>Klargjor Firebase...</ThemedText>
-            </View>
-          ) : (
+      {/* Chat full-screen overlay */}
+      {compact && chatOpen && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          statusBarTranslucent={true}
+          onRequestClose={() => setChatOpen(false)}>
+          <ThemedView style={styles.container}>
+            <AnimatedBackdrop />
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={[styles.content, compact && styles.contentCompact, contentPadding]}>
-                <AuthScreen compact={compact} />
-              </ScrollView>
-            </KeyboardAvoidingView>
-          )}
-        </ThemedView>
-      </Modal>
-
-      {/* Chat full-screen modal — covers native tab bar */}
-      <Modal
-        visible={compact && chatOpen && !!user}
-        animationType="none"
-        presentationStyle="fullScreen"
-        statusBarTranslucent>
-        <ThemedView style={styles.container}>
-          <AnimatedBackdrop />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
-            {user && (
               <AdminScreen
                 user={user}
                 compact={compact}
@@ -909,10 +868,10 @@ export default function HomeScreen() {
                 setChatOpen={setChatOpen}
                 initialSelectedChatId={selectedChatIdForModal}
               />
-            )}
-          </KeyboardAvoidingView>
-        </ThemedView>
-      </Modal>
+            </KeyboardAvoidingView>
+          </ThemedView>
+        </Modal>
+      )}
     </ThemedView>
   );
 }
@@ -1132,17 +1091,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   authCard: {
-    flex: 1,
+    width: '100%',
     maxWidth: 430,
     borderRadius: 32,
     padding: Spacing.four,
-    backgroundColor: '#f7faff',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.70)',
+    borderColor: 'rgba(0,0,0,0.06)',
     shadowColor: '#000000',
-    shadowOpacity: 0.28,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 28 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
   },
   segment: {
     height: 52,
@@ -1212,32 +1171,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   submitButton: {
-    minHeight: 72,
-    borderRadius: 28,
+    minHeight: 58,
+    borderRadius: 16,
     marginTop: Spacing.four,
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: Spacing.five,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     backgroundColor: '#03a84e',
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: '#03a84e',
-    shadowOpacity: 0.75,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 24 },
-    elevation: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.30,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   submitButtonBusy: {
-    opacity: 0.82,
+    opacity: 0.6,
   },
   submitText: {
     color: '#ffffff',
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   dashboard: {
     flex: 1,
