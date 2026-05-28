@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, useWindowDimensions, View, Pressable, Alert } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, Pressable, Alert } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import { firebaseAuth } from '@/lib/firebase';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { useTranslation, type RawLang } from '@/lib/i18n';
 
 function MovingBackground() {
   const move = useSharedValue(0);
@@ -72,19 +73,18 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 720;
+  const { t, savedLang, setLang } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
 
-  // Load preferences on mount
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const notif = await AsyncStorage.getItem('@vintra_settings_notif');
         const sound = await AsyncStorage.getItem('@vintra_settings_sound');
         const vib = await AsyncStorage.getItem('@vintra_settings_vib');
-
         if (notif !== null) setNotificationsEnabled(notif === 'true');
         if (sound !== null) setSoundEnabled(sound === 'true');
         if (vib !== null) setVibrationEnabled(vib === 'true');
@@ -92,49 +92,32 @@ export default function SettingsScreen() {
         console.error('Error loading settings', e);
       }
     };
-
     loadSettings();
-
     const unsub = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  // Setters persisting to AsyncStorage
   const toggleNotifications = async (val: boolean) => {
     setNotificationsEnabled(val);
-    try {
-      await AsyncStorage.setItem('@vintra_settings_notif', String(val));
-    } catch (e) {
-      console.error(e);
-    }
+    AsyncStorage.setItem('@vintra_settings_notif', String(val)).catch(console.error);
   };
-
   const toggleSound = async (val: boolean) => {
     setSoundEnabled(val);
-    try {
-      await AsyncStorage.setItem('@vintra_settings_sound', String(val));
-    } catch (e) {
-      console.error(e);
-    }
+    AsyncStorage.setItem('@vintra_settings_sound', String(val)).catch(console.error);
   };
-
   const toggleVibration = async (val: boolean) => {
     setVibrationEnabled(val);
-    try {
-      await AsyncStorage.setItem('@vintra_settings_vib', String(val));
-    } catch (e) {
-      console.error(e);
-    }
+    AsyncStorage.setItem('@vintra_settings_vib', String(val)).catch(console.error);
   };
 
   async function handleSignOut() {
     Alert.alert(
-      'Sign Out',
-      'Are you sure you want to log out of your Vintra account?',
+      t('settings_sign_out_title'),
+      t('settings_sign_out_msg'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('settings_cancel'), style: 'cancel' },
         {
-          text: 'Log Out',
+          text: t('settings_log_out'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -143,11 +126,17 @@ export default function SettingsScreen() {
             } catch (error) {
               console.error('Sign out error:', error);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   }
+
+  const langOptions: { key: RawLang; label: () => string }[] = [
+    { key: 'auto', label: () => t('settings_lang_auto') },
+    { key: 'en',   label: () => t('settings_lang_en') },
+    { key: 'no',   label: () => t('settings_lang_no') },
+  ];
 
   return (
     <ThemedView style={styles.container}>
@@ -162,54 +151,82 @@ export default function SettingsScreen() {
           <View style={styles.iconBox}>
             <SymbolView name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }} size={28} tintColor="#ffffff" />
           </View>
-          <ThemedText style={[styles.title, compact && styles.titleCompact]}>Settings</ThemedText>
-          <ThemedText style={styles.lead}>
-            Customize notifications, sounds, and account details.
-          </ThemedText>
+          <ThemedText style={[styles.title, compact && styles.titleCompact]}>{t('settings_title')}</ThemedText>
+          <ThemedText style={styles.lead}>{t('settings_lead')}</ThemedText>
         </View>
 
+        {/* Notifications */}
         <View style={styles.panel}>
-          <ThemedText style={styles.sectionTitle}>Notifications & Sound</ThemedText>
+          <ThemedText style={styles.sectionTitle}>{t('settings_section_notif')}</ThemedText>
           <View style={styles.divider} />
-          
           <SettingRow
             icon={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
             iconBg="#3b82f6"
-            label="Push Notifications"
-            description="Alert when visitors request live agent assistance"
+            label={t('settings_notif_label')}
+            description={t('settings_notif_desc')}
             value={notificationsEnabled}
             onValueChange={toggleNotifications}
           />
-          
           <SettingRow
             icon={{ ios: 'speaker.wave.2.fill', android: 'volume_up', web: 'volume_up' }}
             iconBg="#03a84e"
-            label="Sound Effects"
-            description="Play sound for new incoming messages"
+            label={t('settings_sound_label')}
+            description={t('settings_sound_desc')}
             value={soundEnabled}
             onValueChange={toggleSound}
           />
-          
           <SettingRow
             icon={{ ios: 'iphone.radiowaves.left.and.right', android: 'vibration', web: 'vibration' }}
             iconBg="#8b5cf6"
-            label="Haptic Vibration"
-            description="Vibrate phone on newly received messages"
+            label={t('settings_vib_label')}
+            description={t('settings_vib_desc')}
             value={vibrationEnabled}
             onValueChange={toggleVibration}
           />
         </View>
 
+        {/* Language */}
+        <View style={styles.panel}>
+          <ThemedText style={styles.sectionTitle}>{t('settings_section_lang')}</ThemedText>
+          <View style={styles.divider} />
+          <View style={styles.langOptions}>
+            {langOptions.map(opt => (
+              <Pressable
+                key={opt.key}
+                onPress={() => setLang(opt.key)}
+                style={({ pressed }) => [
+                  styles.langOption,
+                  savedLang === opt.key && styles.langOptionActive,
+                  pressed && styles.pressed,
+                ]}>
+                <Text style={[styles.langOptionText, savedLang === opt.key && styles.langOptionTextActive]}>
+                  {opt.label()}
+                </Text>
+                {savedLang === opt.key && (
+                  <SymbolView
+                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                    size={14}
+                    tintColor="#03a84e"
+                  />
+                )}
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Account */}
         {user ? (
           <View style={styles.panel}>
-            <ThemedText style={styles.sectionTitle}>Account</ThemedText>
+            <ThemedText style={styles.sectionTitle}>{t('settings_section_account')}</ThemedText>
             <View style={styles.divider} />
             <View style={styles.accountInfo}>
               <View style={styles.accountAvatar}>
-                <ThemedText style={styles.avatarText}>{(user.displayName || user.email || 'A').slice(0, 1).toUpperCase()}</ThemedText>
+                <ThemedText style={styles.avatarText}>
+                  {(user.displayName || user.email || 'A').slice(0, 1).toUpperCase()}
+                </ThemedText>
               </View>
               <View>
-                <ThemedText style={styles.accountName}>{user.displayName || 'Vintra Agent'}</ThemedText>
+                <ThemedText style={styles.accountName}>{user.displayName || t('settings_agent_name')}</ThemedText>
                 <ThemedText style={styles.accountEmail}>{user.email}</ThemedText>
               </View>
             </View>
@@ -221,8 +238,8 @@ export default function SettingsScreen() {
                 <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={20} tintColor="#ffffff" />
               </View>
               <View style={styles.settingContent}>
-                <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
-                <ThemedText style={styles.settingDescription}>Securely sign out of this device</ThemedText>
+                <ThemedText style={styles.logoutText}>{t('settings_sign_out')}</ThemedText>
+                <ThemedText style={styles.settingDescription}>{t('settings_sign_out_desc')}</ThemedText>
               </View>
             </Pressable>
           </View>
@@ -391,5 +408,31 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.75,
+  },
+  langOptions: {
+    gap: 6,
+  },
+  langOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  langOptionActive: {
+    borderColor: 'rgba(3,168,78,0.35)',
+    backgroundColor: 'rgba(3,168,78,0.08)',
+  },
+  langOptionText: {
+    color: '#94a3b8',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  langOptionTextActive: {
+    color: '#ffffff',
   },
 });

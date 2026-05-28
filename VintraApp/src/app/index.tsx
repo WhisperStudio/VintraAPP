@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeInDown,
+  LinearTransition,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -48,6 +50,7 @@ import {
   type SupportMessage,
 } from '@/lib/admin-chat';
 import { firebaseAuth } from '@/lib/firebase';
+import { useTranslation } from '@/lib/i18n';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
@@ -203,7 +206,6 @@ export function AuthScreen({ compact }: { compact: boolean }) {
         <View style={styles.featureGrid}>
           {['Live chat', 'Support', 'Vintra'].map((item) => (
             <View key={item} style={styles.featurePill}>
-              <View style={styles.liveDot} />
               <ThemedText style={styles.featureText}>{item}</ThemedText>
             </View>
           ))}
@@ -276,38 +278,63 @@ export function AuthScreen({ compact }: { compact: boolean }) {
 
 function AdminBackground() {
   const move = useSharedValue(0);
+  const pulse = useSharedValue(1);
 
   useEffect(() => {
-    move.value = withRepeat(withTiming(1, { duration: 7600, easing: Easing.inOut(Easing.cubic) }), -1, true);
-  }, [move]);
+    move.value = withRepeat(withTiming(1, { duration: 12000, easing: Easing.inOut(Easing.cubic) }), -1, true);
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 4000, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.quad) }),
+      ),
+      -1,
+      false,
+    );
+  }, [move, pulse]);
 
-  const topBand = useAnimatedStyle(() => ({
-    transform: [{ translateX: -120 + move.value * 160 }, { rotateZ: '-12deg' }],
-  }));
-
-  const middleGlow = useAnimatedStyle(() => ({
+  const aurora1 = useAnimatedStyle(() => ({
     transform: [
-      { translateY: -60 + move.value * 120 },
-      { translateX: 40 - move.value * 80 },
-      { scale: 0.95 + move.value * 0.15 }
+      { translateX: -150 + move.value * 200 },
+      { translateY: -50 + move.value * 80 },
+      { rotateZ: '-12deg' },
+      { scale: pulse.value },
     ],
+    opacity: 0.4 + move.value * 0.2,
   }));
 
-  const bottomBand = useAnimatedStyle(() => ({
-    transform: [{ translateX: 100 - move.value * 150 }, { rotateZ: '17deg' }],
+  const aurora2 = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: 100 - move.value * 180 },
+      { translateY: 100 - move.value * 120 },
+      { rotateZ: '18deg' },
+      { scale: 1.1 - move.value * 0.1 },
+    ],
+    opacity: 0.3 + (1 - move.value) * 0.15,
+  }));
+
+  const aurora3 = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: -80 + move.value * 120 },
+      { translateY: 200 - move.value * 150 },
+      { rotateZ: '8deg' },
+      { scale: 0.9 + move.value * 0.2 },
+    ],
   }));
 
   return (
     <View pointerEvents="none" style={styles.adminBackground}>
-      <Animated.View style={[styles.adminTopBand, topBand]} />
-      <Animated.View style={[styles.adminMiddleGlow, middleGlow]} />
-      <Animated.View style={[styles.adminBottomBand, bottomBand]} />
+      <View style={styles.auroraBase} />
+      <Animated.View style={[styles.auroraTeal, aurora1]} />
+      <Animated.View style={[styles.auroraPurple, aurora2]} />
+      <Animated.View style={[styles.auroraBlue, aurora3]} />
+      <View style={styles.meshGradientOverlay} />
     </View>
   );
 }
 
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
   const insets = useSafeAreaInsets();
+  const { t: adminT } = useTranslation();
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
   const [accessError, setAccessError] = useState('');
@@ -503,7 +530,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   if (!adminReady) {
     return (
       <View style={styles.loadingState}>
-        <ActivityIndicator color="#ffffff" size="large" />
+        <ActivityIndicator color="#03a84e" size="large" />
         <ThemedText style={styles.loadingText}>Checking access...</ThemedText>
       </View>
     );
@@ -528,230 +555,255 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     <>
       <AdminBackground />
       <View style={[styles.dashboard, compact && chatOpen && styles.dashboardCompactOpen]}>
+
+        {/* ── TOP BAR ─────────────────────────────────────── */}
         {!(compact && chatOpen) && (
-        <>
-          <View style={styles.dashboardHeader}>
-            <View style={styles.brandDark}>
-              <VintraMark />
-              <View>
-                <ThemedText style={styles.brandNameDark}>VINTRA</ThemedText>
-                <ThemedText style={styles.brandSublineDark}>Live Inbox</ThemedText>
-              </View>
-            </View>
-            <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}>
-              <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={17} tintColor="#ffffff" />
-              {!compact && <ThemedText style={styles.logoutText}>Sign Out</ThemedText>}
-            </Pressable>
-          </View>
-
-          <View style={styles.inboxHeader}>
-            <View style={styles.inboxHeaderTop}>
-              <View>
-                <ThemedText style={styles.inboxKicker}>Incoming Inquiries</ThemedText>
-                <ThemedText style={[styles.inboxTitle, compact && styles.inboxTitleCompact]}>Messages</ThemedText>
-              </View>
-              <View style={styles.inboxPresence}>
-                <View style={styles.statusDotActive} />
-                <ThemedText style={styles.inboxPresenceText}>Live</ThemedText>
-              </View>
-            </View>
-            <ThemedText style={styles.inboxLead}>Welcome, {displayName}. Here are the real-time messages from your Vintra widget.</ThemedText>
-
-            <View style={styles.inboxMetrics}>
-              <InboxMetric label="Waiting" value={String(waitingChats)} active />
-              <InboxMetric label="Active" value={String(activeChats)} />
-              <InboxMetric label="Total" value={String(chats.length)} />
-            </View>
-          </View>
-
-          {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
-        </>
-      )}
-
-      <View style={[styles.supportLayout, compact && styles.supportLayoutCompact]}>
-        {(!compact || !chatOpen) && (
-          <View style={[styles.conversationListPanel, compact && styles.conversationListPanelFull]}>
-            
-            {/* Highly Polished Search Bar */}
-            <View style={styles.searchBarContainer}>
-              <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={16} tintColor="#94a3b8" />
-              <TextInput
-                placeholder="Search visitors or messages..."
-                placeholderTextColor="#64748b"
-                style={styles.searchBarInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery ? (
-                <Pressable onPress={() => setSearchQuery('')}>
-                  <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={16} tintColor="#64748b" />
-                </Pressable>
-              ) : null}
-            </View>
-
-            <View style={styles.inboxTabs}>
-              <View style={styles.inboxTabActive}>
-                <ThemedText style={styles.inboxTabTextActive}>Active chats</ThemedText>
-                {waitingChats ? (
-                  <View style={styles.tabBadge}>
-                    <ThemedText style={styles.tabBadgeText}>{waitingChats}</ThemedText>
+          <>
+            <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
+              <View style={styles.topBarBrand}>
+                <View style={styles.topBarLogo}>
+                  <Text style={styles.topBarLogoV}>V</Text>
+                </View>
+                <View>
+                  <Text style={styles.topBarName}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
+                  <View style={styles.topBarLive}>
+                    <View style={styles.topBarLiveDot} />
+                    <Text style={styles.topBarLiveText}>LIVE CONSOLE</Text>
                   </View>
+                </View>
+              </View>
+
+              <View style={styles.topBarMetrics}>
+                {waitingChats > 0 && (
+                  <View style={styles.topBarMetricUrgent}>
+                    <Text style={styles.topBarMetricUrgentNum}>{waitingChats}</Text>
+                    <Text style={styles.topBarMetricUrgentLabel}>NEW</Text>
+                  </View>
+                )}
+                <View style={styles.topBarMetricBlue}>
+                  <Text style={styles.topBarMetricBlueNum}>{activeChats}</Text>
+                  <Text style={styles.topBarMetricBlueLabel}>OPEN</Text>
+                </View>
+                <View style={styles.topBarMetricGray}>
+                  <Text style={styles.topBarMetricGrayNum}>{chats.length}</Text>
+                  <Text style={styles.topBarMetricGrayLabel}>TOTAL</Text>
+                </View>
+              </View>
+
+              <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.topBarLogoutBtn, pressed && styles.pressed]}>
+                <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={16} tintColor="#475569" />
+              </Pressable>
+            </View>
+            {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
+          </>
+        )}
+
+        {/* ── MAIN LAYOUT ─────────────────────────────────── */}
+        <View style={[styles.mainLayout, compact && styles.mainLayoutCompact]}>
+
+          {/* LEFT: Conversation list */}
+          {(!compact || !chatOpen) && (
+            <View style={[styles.sidePanel, compact && styles.sidePanelFull]}>
+
+              {/* Search */}
+              <View style={styles.sideSearch}>
+                <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={14} tintColor="#334155" />
+                <TextInput
+                  placeholder="…"
+                  placeholderTextColor="#334155"
+                  style={styles.sideSearchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                  <Pressable onPress={() => setSearchQuery('')}>
+                    <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={14} tintColor="#334155" />
+                  </Pressable>
                 ) : null}
               </View>
-              <View style={styles.inboxTab}>
-                <ThemedText style={styles.inboxTabText}>AI / closed</ThemedText>
-              </View>
-              {chatsLoading ? <ActivityIndicator color="#246cff" /> : null}
-            </View>
 
-            {!chatsLoading && !chats.length ? (
-              <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyTitle}>No conversations yet</ThemedText>
-                <ThemedText style={styles.emptyText}>When visitors ask for help on your website, they will appear right here.</ThemedText>
-              </View>
-            ) : (
-              <View style={styles.conversationList}>
-                {unansweredChats.length ? <ConversationSection title="Unanswered" count={unansweredChats.length} urgent /> : null}
-                {unansweredChats.map((chat) => (
-                  <ConversationRow
-                    key={chat.id}
-                    chat={chat}
-                    active={chat.id === selectedChatId}
-                    onPress={() => handleSelectChat(chat.id)}
-                  />
-                ))}
-                {servedChats.length ? <ConversationSection title="Served" count={servedChats.length} /> : null}
-                {servedChats.map((chat) => (
-                  <ConversationRow
-                    key={chat.id}
-                    chat={chat}
-                    active={chat.id === selectedChatId}
-                    onPress={() => handleSelectChat(chat.id)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {(!compact || chatOpen) && (
-          <View style={[styles.chatPanel, compact && styles.chatPanelFull]}>
-            {openChat ? (
-              <>
-                <View style={[styles.chatHeader, compact && { paddingTop: insets.top + 8 }]}>
-                  {compact && (
-                    <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-                      <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor="#ffffff" />
-                    </Pressable>
-                  )}
-                  <View style={styles.chatAvatar}>
-                    <ThemedText style={styles.chatAvatarText}>{(openChat.visitorName || 'V').slice(0, 1).toUpperCase()}</ThemedText>
-                  </View>
-                  <View style={styles.chatHeaderCopy}>
-                    <ThemedText style={styles.chatTitle}>{openChat.visitorName || 'Visitor'}</ThemedText>
-                    <ThemedText numberOfLines={1} style={styles.chatMeta}>
-                      {openChat.pageTitle || openChat.pageUrl || openChat.sessionId}
-                    </ThemedText>
-                  </View>
-                  <StatusPill status={openChat.status} />
+              {/* Stats row */}
+              <View style={styles.sideStats}>
+                <View style={[styles.sideStatCard, waitingChats > 0 && styles.sideStatCardUrgent]}>
+                  <Text style={[styles.sideStatNum, waitingChats > 0 && { color: '#f87171' }]}>{waitingChats}</Text>
+                  <Text style={styles.sideStatLabel}>{adminT('admin_waiting')}</Text>
                 </View>
-
-                <View style={styles.chatActionRow}>
-                  <Pressable
-                    disabled={sending}
-                    onPress={() => handleStatusChange('open')}
-                    style={({ pressed }) => [styles.chatActionButton, openChat.status === 'open' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor="#ffffff" />
-                    <ThemedText style={[styles.chatActionText, openChat.status === 'open' && styles.chatActionTextActive]}>
-                      {compact ? 'Assign' : 'Assign to Me'}
-                    </ThemedText>
-                  </Pressable>
-                  <Pressable
-                    disabled={sending}
-                    onPress={() => handleStatusChange('ai-active')}
-                    style={({ pressed }) => [styles.chatActionButton, openChat.status === 'ai-active' && styles.chatActionButtonActive, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor="#ffffff" />
-                    <ThemedText style={[styles.chatActionText, openChat.status === 'ai-active' && styles.chatActionTextActive]}>
-                      {compact ? 'AI Mode' : 'AI Assistant'}
-                    </ThemedText>
-                  </Pressable>
-                  <Pressable
-                    disabled={sending}
-                    onPress={handleCloseChat}
-                    style={({ pressed }) => [styles.chatActionButton, styles.chatActionButtonClose, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }} size={16} tintColor="#ef4444" />
-                    <ThemedText style={styles.chatActionTextClose}>
-                      {compact ? 'Close' : 'Close Chat'}
-                    </ThemedText>
-                  </Pressable>
+                <View style={[styles.sideStatCard, { borderColor: 'rgba(15,110,255,0.2)' }]}>
+                  <Text style={[styles.sideStatNum, { color: '#0f6eff' }]}>{activeChats}</Text>
+                  <Text style={styles.sideStatLabel}>{adminT('admin_active')}</Text>
                 </View>
+                <View style={styles.sideStatCard}>
+                  <Text style={styles.sideStatNum}>{chats.length}</Text>
+                  <Text style={styles.sideStatLabel}>{adminT('admin_all')}</Text>
+                </View>
+              </View>
 
-                <ScrollView 
-                  ref={messageListRef}
-                  style={styles.messageList} 
-                  contentContainerStyle={[styles.messageListContent, { paddingBottom: 16 }]}
-                  showsVerticalScrollIndicator={false}
-                  onContentSizeChange={() => messageListRef.current?.scrollToEnd({ animated: false })}>
-                  {chatLoading ? (
-                    <ActivityIndicator color="#03a84e" />
-                  ) : (
-                    openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
+              {/* Chat list */}
+              {chatsLoading ? (
+                <View style={styles.sideLoading}>
+                  <ActivityIndicator color="#0f6eff" />
+                </View>
+              ) : !filteredVisibleChats.length ? (
+                <View style={styles.sideEmpty}>
+                  <View style={styles.sideEmptyIcon}>
+                    <SymbolView name={{ ios: 'tray', android: 'inbox', web: 'inbox' }} size={28} tintColor="#1e293b" />
+                  </View>
+                  <Text style={styles.sideEmptyTitle}>{adminT('admin_no_conversations')}</Text>
+                  <Text style={styles.sideEmptyText}>{adminT('admin_no_conversations_sub')}</Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.sideList}>
+                  {unansweredChats.length > 0 && (
+                    <View style={styles.sideSection}>
+                      <View style={styles.sideSectionDot} />
+                      <Text style={styles.sideSectionText}>NEEDS REPLY</Text>
+                      <View style={styles.sideSectionBadge}>
+                        <Text style={styles.sideSectionBadgeText}>{unansweredChats.length}</Text>
+                      </View>
+                    </View>
                   )}
+                  {unansweredChats.map((chat) => (
+                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} onPress={() => handleSelectChat(chat.id)} />
+                  ))}
+                  {servedChats.length > 0 && (
+                    <View style={styles.sideSection}>
+                      <View style={[styles.sideSectionDot, { backgroundColor: '#3d5a80' }]} />
+                      <Text style={styles.sideSectionText}>ACTIVE</Text>
+                    </View>
+                  )}
+                  {servedChats.map((chat) => (
+                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} onPress={() => handleSelectChat(chat.id)} />
+                  ))}
                 </ScrollView>
+              )}
+            </View>
+          )}
 
-                {/* Fancy Canned Responses Row */}
-                <View style={styles.templatesContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templatesScroll}>
-                    {[
-                      { text: '👋 Hello! How can I help you today?', value: 'Hello! How can I help you today?' },
-                      { text: '🔍 Let me check that for you...', value: 'Let me look into that for you. One moment, please.' },
-                      { text: '✅ Resolved!', value: 'I have resolved this request. Let me know if there is anything else I can do for you!' },
-                      { text: '📧 Contact Email', value: 'Could you please provide your email address so I can follow up on this request?' },
-                      { text: '🙏 Thank you!', value: 'Thank you for reaching out to us. Have an amazing day!' }
-                    ].map((item, i) => (
-                      <Pressable
-                        key={i}
-                        onPress={() => setReply(item.value)}
-                        style={({ pressed }) => [styles.templatePill, pressed && styles.pressed]}>
-                        <Text style={styles.templatePillText}>{item.text}</Text>
+          {/* RIGHT: Chat area */}
+          {(!compact || chatOpen) && (
+            <View style={[styles.chatArea, compact && styles.chatAreaFull]}>
+              {openChat ? (
+                <>
+                  {/* Chat top bar */}
+                  <View style={[styles.chatTopBar, compact && { paddingTop: insets.top + 8 }]}>
+                    {compact && (
+                      <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.chatBackBtn, pressed && styles.pressed]}>
+                        <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={20} tintColor="#94a3b8" />
                       </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.replyBar}>
-                  <TextInput
-                    multiline
-                    placeholder="Type a reply to visitor..."
-                    placeholderTextColor="#7d8aa0"
-                    returnKeyType="send"
-                    style={styles.replyInput}
-                    value={reply}
-                    onChangeText={setReply}
-                    onSubmitEditing={handleSendReply}
-                  />
-                  <Pressable
-                    disabled={sending || !reply.trim()}
-                    onPress={handleSendReply}
-                    style={({ pressed }) => [styles.sendReplyButton, (sending || !reply.trim()) && styles.buttonDisabled, pressed && styles.pressed]}>
-                    {sending ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <SymbolView name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }} size={20} tintColor="#ffffff" />
                     )}
-                  </Pressable>
+                    <View style={[styles.chatTopAvatar, { backgroundColor: avatarColor(openChat.visitorName || 'V') }]}>
+                      <Text style={styles.chatTopAvatarText}>{(openChat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
+                      <View style={[styles.chatTopOnlineDot, openChat.status === 'needs-human' && { backgroundColor: '#ef4444' }]} />
+                    </View>
+                    <View style={styles.chatTopInfo}>
+                      <Text style={styles.chatTopName}>{openChat.visitorName || 'Visitor'}</Text>
+                      <Text style={styles.chatTopMeta} numberOfLines={1}>
+                        {openChat.pageTitle || openChat.pageUrl || 'Website visitor'}
+                      </Text>
+                    </View>
+                    <StatusPill status={openChat.status} />
+                  </View>
+
+                  {/* Action toolbar */}
+                  <View style={styles.chatToolbar}>
+                    <Pressable
+                      disabled={sending}
+                      onPress={() => handleStatusChange('open')}
+                      style={({ pressed }) => [styles.toolBtn, openChat.status === 'open' && styles.toolBtnBlue, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                      <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={13} tintColor={openChat.status === 'open' ? '#0f6eff' : '#475569'} />
+                      <Text style={[styles.toolBtnText, openChat.status === 'open' && styles.toolBtnTextBlue]}>
+                        {compact ? 'Take' : 'Assign to me'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={sending}
+                      onPress={() => handleStatusChange('ai-active')}
+                      style={({ pressed }) => [styles.toolBtn, openChat.status === 'ai-active' && styles.toolBtnPurple, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                      <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={13} tintColor={openChat.status === 'ai-active' ? '#a78bfa' : '#475569'} />
+                      <Text style={[styles.toolBtnText, openChat.status === 'ai-active' && styles.toolBtnTextPurple]}>
+                        {compact ? 'AI' : 'AI Mode'}
+                      </Text>
+                    </Pressable>
+                    <View style={styles.toolBtnSpacer} />
+                    <Pressable
+                      disabled={sending}
+                      onPress={handleCloseChat}
+                      style={({ pressed }) => [styles.toolBtnResolve, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                      <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={13} tintColor="#22c55e" />
+                      <Text style={styles.toolBtnResolveText}>Resolve</Text>
+                    </Pressable>
+                  </View>
+
+                  {/* Messages */}
+                  <ScrollView
+                    ref={messageListRef}
+                    style={styles.msgScroll}
+                    contentContainerStyle={styles.msgScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    onContentSizeChange={() => messageListRef.current?.scrollToEnd({ animated: false })}>
+                    {chatLoading ? (
+                      <View style={styles.msgLoading}>
+                        <ActivityIndicator color="#0f6eff" />
+                      </View>
+                    ) : (
+                      openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
+                    )}
+                  </ScrollView>
+
+                  {/* Quick replies */}
+                  <View style={styles.quickBar}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
+                      {[
+                        { label: '👋 Hello', value: 'Hello! How can I help you today?' },
+                        { label: '🔍 Looking', value: 'Let me look into that for you. One moment, please.' },
+                        { label: '✅ Resolved', value: 'I have resolved this. Let me know if there is anything else!' },
+                        { label: '📧 Email?', value: 'Could you provide your email so I can follow up?' },
+                        { label: '🙏 Thanks', value: 'Thank you for reaching out! Have an amazing day.' },
+                      ].map((item, i) => (
+                        <Pressable
+                          key={i}
+                          onPress={() => setReply(item.value)}
+                          style={({ pressed }) => [styles.quickChip, pressed && styles.pressed]}>
+                          <Text style={styles.quickChipText}>{item.label}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  {/* Input */}
+                  <View style={styles.msgInputBar}>
+                    <TextInput
+                      multiline
+                      placeholder="Write a reply..."
+                      placeholderTextColor="#283447"
+                      style={styles.msgInput}
+                      value={reply}
+                      onChangeText={setReply}
+                      onSubmitEditing={handleSendReply}
+                    />
+                    <Pressable
+                      disabled={sending || !reply.trim()}
+                      onPress={handleSendReply}
+                      style={({ pressed }) => [styles.msgSendBtn, (sending || !reply.trim()) && styles.msgSendBtnDisabled, pressed && styles.pressed]}>
+                      {sending
+                        ? <ActivityIndicator color="#ffffff" size="small" />
+                        : <SymbolView name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} size={17} tintColor="#ffffff" />}
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.chatPlaceholder}>
+                  <View style={styles.chatPlaceholderIcon}>
+                    <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} size={30} tintColor="#0f6eff" />
+                  </View>
+                  <Text style={styles.chatPlaceholderTitle}>Select a conversation</Text>
+                  <Text style={styles.chatPlaceholderText}>Pick a chat from the left panel to start responding to your visitors.</Text>
                 </View>
-              </>
-            ) : (
-              <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyTitle}>Select a Conversation</ThemedText>
-                <ThemedText style={styles.emptyText}>Open a chat from the left pane to view messages and respond.</ThemedText>
-              </View>
-            )}
-          </View>
-        )}
+              )}
+            </View>
+          )}
+        </View>
       </View>
-    </View>
     </>
   );
 }
@@ -788,7 +840,8 @@ function ConversationSection({ title, count, urgent }: { title: string; count: n
 }
 
 function StatusPill({ status }: { status: string }) {
-  const label = status === 'needs-human' ? 'Waiting' : status === 'open' ? 'Active' : status === 'ai-active' ? 'AI' : status;
+  const { t } = useTranslation();
+  const label = status === 'needs-human' ? t('status_waiting') : status === 'open' ? t('status_active') : status === 'ai-active' ? t('status_ai') : status;
 
   return (
     <View style={[styles.chatStatusPill, status === 'needs-human' && styles.chatStatusWaiting]}>
@@ -813,59 +866,40 @@ function statusLabel(status: string): string {
 function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active: boolean; onPress: () => void }) {
   const lastMessage = chat.messages.at(-1);
   const needsAnswer = chat.status === 'needs-human';
-  const label = statusLabel(chat.status);
-  const avatarBg = needsAnswer ? '#ef4444' : avatarColor(chat.visitorName || 'K');
-
-  // Custom colors for different badge states
-  const badgeColor = 
-    chat.status === 'needs-human' ? '#ef4444' : 
-    chat.status === 'ai-active' ? '#8b5cf6' : '#3b82f6';
+  const isAI = chat.status === 'ai-active';
+  const accentColor = needsAnswer ? '#ef4444' : isAI ? '#8b5cf6' : '#0f6eff';
+  const bg = avatarColor(chat.visitorName || 'V');
+  const label = needsAnswer ? 'New' : isAI ? 'AI' : 'Open';
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.conversationRow,
-        needsAnswer && styles.conversationRowUrgent,
-        active && styles.conversationRowActive,
-        pressed && styles.pressed,
-      ]}>
-      <View style={[styles.conversationAvatar, { backgroundColor: avatarBg }]}>
-        {needsAnswer ? (
-          <SymbolView name={{ ios: 'phone.fill', android: 'call', web: 'call' }} size={16} tintColor="#ffffff" />
-        ) : (
-          <ThemedText style={styles.conversationAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</ThemedText>
-        )}
-        {/* Neon Active Dot inside Avatar */}
-        <View style={[styles.avatarStatusDot, { backgroundColor: badgeColor }]} />
-      </View>
-      <View style={styles.conversationCopy}>
-        <View style={styles.conversationTop}>
-          <ThemedText numberOfLines={1} style={styles.conversationName}>
-            {chat.visitorName || 'Visitor'}
-          </ThemedText>
-          <ThemedText style={styles.conversationTime}>{formatTime(chat.updatedAt)}</ThemedText>
+    <Animated.View entering={FadeInDown.duration(280)} layout={LinearTransition.springify().damping(18)}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.chatRow, active && styles.chatRowActive, needsAnswer && styles.chatRowUrgent, pressed && styles.pressed]}>
+        <View style={[styles.chatRowAccentBar, { backgroundColor: active || needsAnswer ? accentColor : 'transparent' }]} />
+        <View style={[styles.chatRowAvatar, { backgroundColor: bg }]}>
+          <Text style={styles.chatRowAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
+          <View style={[styles.chatRowStatusDot, { backgroundColor: accentColor }]} />
         </View>
-        <ThemedText numberOfLines={1} style={styles.conversationPreview}>
-          {lastMessage?.text || chat.preview || 'No messages yet'}
-        </ThemedText>
-        <View style={styles.conversationMiddle}>
-          <SymbolView name={{ ios: 'globe', android: 'language', web: 'language' }} size={10} tintColor="#64748b" />
-          <ThemedText numberOfLines={1} style={styles.conversationSource}>
+        <View style={styles.chatRowBody}>
+          <View style={styles.chatRowTop}>
+            <Text style={[styles.chatRowName, active && styles.chatRowNameActive]} numberOfLines={1}>
+              {chat.visitorName || 'Visitor'}
+            </Text>
+            <Text style={styles.chatRowTime}>{formatTime(chat.updatedAt)}</Text>
+          </View>
+          <Text style={styles.chatRowPreview} numberOfLines={1}>
+            {lastMessage?.text || chat.preview || 'No messages yet'}
+          </Text>
+          <Text style={styles.chatRowSource} numberOfLines={1}>
             {chat.pageTitle || chat.countryCode || 'vintranordic.com'}
-          </ThemedText>
+          </Text>
         </View>
-      </View>
-      <View style={styles.conversationRight}>
-        {/* Glow-themed status badge */}
-        <View style={[
-          styles.statusBadge, 
-          { backgroundColor: badgeColor + '12', borderColor: badgeColor + '30' }
-        ]}>
-          <ThemedText style={[styles.statusText, { color: badgeColor }]}>{label}</ThemedText>
+        <View style={[styles.chatRowBadge, { backgroundColor: accentColor + '18', borderColor: accentColor + '45' }]}>
+          <Text style={[styles.chatRowBadgeText, { color: accentColor }]}>{label}</Text>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -873,13 +907,24 @@ function MessageBubble({ message }: { message: SupportMessage }) {
   const fromAdmin = message.role === 'support';
   const fromSystem = message.role === 'system';
 
+  if (fromSystem) {
+    return (
+      <View style={styles.sysMsgRow}>
+        <Text style={styles.sysMsgText}>{message.text}</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.messageRow, fromAdmin && styles.messageRowAdmin, fromSystem && styles.messageRowSystem]}>
-      <View style={[styles.messageBubble, fromAdmin && styles.messageBubbleAdmin, fromSystem && styles.messageBubbleSystem]}>
-        <ThemedText style={[styles.messageText, fromAdmin && styles.messageTextAdmin, fromSystem && styles.messageTextSystem]}>
-          {message.text}
-        </ThemedText>
-        <ThemedText style={[styles.messageTime, fromAdmin && styles.messageTimeAdmin]}>{formatTime(message.createdAt)}</ThemedText>
+    <View style={[styles.bubbleRow, fromAdmin && styles.bubbleRowAdmin]}>
+      {!fromAdmin && (
+        <View style={styles.bubbleVisitorAvatar}>
+          <Text style={styles.bubbleVisitorAvatarText}>V</Text>
+        </View>
+      )}
+      <View style={[styles.bubble, fromAdmin && styles.bubbleAdmin]}>
+        <Text style={[styles.bubbleText, fromAdmin && styles.bubbleTextAdmin]}>{message.text}</Text>
+        <Text style={[styles.bubbleTime, fromAdmin && styles.bubbleTimeAdmin]}>{formatTime(message.createdAt)}</Text>
       </View>
     </View>
   );
@@ -920,7 +965,7 @@ export default function HomeScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.content, compact && styles.contentCompact, contentPadding]}>
+            contentContainerStyle={[styles.content, compact && styles.contentCompact]}>
             <AdminScreen
               user={user}
               compact={compact}
@@ -961,7 +1006,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#06111f',
+    backgroundColor: '#141e2e',
   },
   keyboardView: {
     flex: 1,
@@ -977,7 +1022,7 @@ const styles = StyleSheet.create({
     width: 560,
     height: 190,
     borderRadius: 48,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   blueBand: {
     position: 'absolute',
@@ -986,7 +1031,7 @@ const styles = StyleSheet.create({
     width: 680,
     height: 240,
     borderRadius: 54,
-    backgroundColor: 'rgba(36,108,255,0.30)',
+    backgroundColor: 'rgba(15,110,255,0.12)',
   },
   scanBeam: {
     position: 'absolute',
@@ -994,21 +1039,18 @@ const styles = StyleSheet.create({
     left: '50%',
     width: 130,
     height: 900,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(15,110,255,0.03)',
   },
   noiseLayer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.015)',
+    backgroundColor: 'rgba(255,255,255,0.005)',
   },
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: 1120,
-    alignSelf: 'center',
-    paddingHorizontal: Spacing.four,
   },
   contentCompact: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: 0,
   },
   contentChatOpen: {
     paddingHorizontal: 0,
@@ -1018,11 +1060,13 @@ const styles = StyleSheet.create({
     minHeight: 560,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.three,
+    gap: 16,
   },
   loadingText: {
-    color: '#ffffff',
+    color: '#0f6eff',
+    fontSize: 16,
     fontWeight: '800',
+    letterSpacing: 0.5,
   },
   authLayout: {
     flex: 1,
@@ -1066,7 +1110,7 @@ const styles = StyleSheet.create({
     height: 31,
     borderRadius: 8,
     backgroundColor: '#0f6eff',
-    transform: [{ rotateZ: '-29deg' }],
+    transform: [{ rotateZ: '-28deg' }],
   },
   logoBladeRight: {
     position: 'absolute',
@@ -1075,7 +1119,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 31,
     borderRadius: 8,
-    backgroundColor: '#10204e',
+    backgroundColor: '#1b204c',
     transform: [{ rotateZ: '29deg' }],
   },
   logoDot: {
@@ -1085,13 +1129,13 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#1f7bff',
+    backgroundColor: '#0f6eff',
   },
   logoBladeLight: {
     backgroundColor: '#ffffff',
   },
   logoBladeSoft: {
-    backgroundColor: '#98bcff',
+    backgroundColor: '#0f6eff',
   },
   logoDotLight: {
     backgroundColor: '#ffffff',
@@ -1112,7 +1156,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   brandSubline: {
-    color: '#9fb4d9',
+    color: '#0f6eff',
     fontSize: 10,
     lineHeight: 14,
     fontWeight: '900',
@@ -1156,15 +1200,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#7df7c4',
+    backgroundColor: '#0f6eff',
   },
   featureText: {
     color: '#edf4ff',
@@ -1177,11 +1221,11 @@ const styles = StyleSheet.create({
     maxWidth: 430,
     borderRadius: 32,
     padding: Spacing.four,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#110d3d',
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+    borderColor: 'rgba(255,255,255,0.08)',
     shadowColor: '#000000',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.25,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
   },
@@ -1190,8 +1234,10 @@ const styles = StyleSheet.create({
     padding: 5,
     borderRadius: 26,
     flexDirection: 'row',
-    backgroundColor: '#e8eef8',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     marginBottom: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   segmentButton: {
     flex: 1,
@@ -1200,14 +1246,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#03a84e',
-    shadowColor: '#03a84e',
-    shadowOpacity: 0.30,
+    backgroundColor: '#0f6eff',
+    shadowColor: '#0f6eff',
+    shadowOpacity: 0.35,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
   segmentText: {
-    color: '#64748b',
+    color: '#94a3b8',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
@@ -1218,13 +1264,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   formTitle: {
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 29,
     lineHeight: 34,
     fontWeight: '900',
   },
   formLead: {
-    color: '#68768c',
+    color: '#94a3b8',
     fontSize: 15,
     lineHeight: 22,
     fontWeight: '700',
@@ -1241,14 +1287,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: '#dfe6f0',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   input: {
     flex: 1,
     minHeight: 54,
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -1261,9 +1307,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#03a84e',
-    shadowColor: '#000000',
-    shadowOpacity: 0.30,
+    backgroundColor: '#0f6eff',
+    shadowColor: '#0f6eff',
+    shadowOpacity: 0.4,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
@@ -1279,12 +1325,133 @@ const styles = StyleSheet.create({
   },
   dashboard: {
     flex: 1,
-    gap: Spacing.three,
-    padding: Spacing.three,
+    gap: 0,
+    padding: 0,
   },
   dashboardCompactOpen: {
     padding: 0,
     gap: 0,
+  },
+  premiumHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  miniLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(15,110,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  miniLogoBlade: {
+    width: 6,
+    height: 18,
+    borderRadius: 3,
+    backgroundColor: '#0f6eff',
+    transform: [{ rotateZ: '-28deg' }],
+  },
+  miniLogoDot: {
+    position: 'absolute',
+    right: 5,
+    top: 5,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#0f6eff',
+  },
+  brandTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  brandTitleAccent: {
+    color: '#0f6eff',
+    fontWeight: '900',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0f6eff',
+  },
+  statusSub: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  headerCapsule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  capsuleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  capsuleVal: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  capsuleLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  capsuleDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: 8,
+  },
+  headerLogout: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   dashboardHeader: {
     minHeight: 66,
@@ -1319,9 +1486,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    backgroundColor: '#eef5ff',
+    backgroundColor: '#1b204c',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.78)',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   adminHeroCompact: {
     alignItems: 'stretch',
@@ -1351,7 +1518,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#18c68b',
+    backgroundColor: '#0f6eff',
   },
   livePillText: {
     color: '#142033',
@@ -1360,7 +1527,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   adminTitle: {
-    color: '#101827',
+    color: '#ffffff',
     fontSize: 48,
     lineHeight: 52,
     fontWeight: '900',
@@ -1407,23 +1574,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   searchBarContainer: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    height: 44,
-    paddingHorizontal: 12,
+    height: 52,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: Spacing.four,
+    gap: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   searchBarInput: {
     flex: 1,
     color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
     height: '100%',
+    letterSpacing: 0.3,
   },
   inboxHeaderTop: {
     flexDirection: 'row',
@@ -1432,7 +1601,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   inboxKicker: {
-    color: '#03a84e',
+    color: '#0f6eff',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
@@ -1463,12 +1632,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: '#ecfdf5',
+    backgroundColor: '#1b204c',
     borderWidth: 1,
-    borderColor: '#b7f7d7',
+    borderColor: '#0f6eff',
   },
   inboxPresenceText: {
-    color: '#03a84e',
+    color: '#0f6eff',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '900',
@@ -1505,7 +1674,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   inboxMetricValueActive: {
-    color: '#03a84e',
+    color: '#0f6eff',
   },
   inboxMetricLabel: {
     color: '#9fb1ce',
@@ -1515,7 +1684,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   inboxMetricLabelActive: {
-    color: '#03a84e',
+    color: '#0f6eff',
   },
   addButton: {
     minHeight: 54,
@@ -1618,7 +1787,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef4ff',
   },
   keyPillText: {
-    color: '#246cff',
+    color: '#0f6eff',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
@@ -1627,12 +1796,12 @@ const styles = StyleSheet.create({
     minHeight: 56,
     borderRadius: 18,
     paddingHorizontal: Spacing.three,
-    color: '#111a2c',
+    color: '#ffffff',
     fontSize: 15,
     fontWeight: '800',
-    backgroundColor: '#f7faff',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: '#dce5f2',
+    borderColor: 'rgba(255,255,255,0.08)',
     marginBottom: Spacing.three,
   },
   widgetGrid: {
@@ -1668,7 +1837,7 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#246cff',
+    backgroundColor: '#0f6eff',
   },
   widgetBadgeDark: {
     backgroundColor: '#111a2c',
@@ -1726,7 +1895,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e7efff',
   },
   taskNumber: {
-    color: '#246cff',
+    color: '#0f6eff',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
@@ -1766,99 +1935,134 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 32,
-    padding: Spacing.four,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    padding: Spacing.five,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.72)',
+    borderColor: 'rgba(255,255,255,0.06)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.5,
+    shadowRadius: 40,
+    elevation: 20,
   },
   noAccessIcon: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111a2c',
-    marginBottom: Spacing.three,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(239,68,68,0.35)',
+    marginBottom: Spacing.four,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   noAccessTitle: {
-    color: '#111a2c',
-    fontSize: 30,
-    lineHeight: 36,
+    color: '#ffffff',
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '900',
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   noAccessText: {
-    color: '#65748d',
+    color: '#94a3b8',
     fontSize: 15,
     lineHeight: 23,
-    fontWeight: '800',
+    fontWeight: '600',
     textAlign: 'center',
-    marginTop: Spacing.two,
+    marginTop: Spacing.three,
+    maxWidth: 320,
   },
   noAccessButton: {
-    minHeight: 52,
+    minHeight: 56,
     borderRadius: 18,
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: Spacing.five,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#246cff',
-    marginTop: Spacing.four,
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.3)',
+    marginTop: Spacing.five,
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
   },
   noAccessButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    lineHeight: 20,
+    color: '#0f6eff',
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: '900',
   },
   inlineError: {
-    color: '#fee2e2',
+    color: '#fecaca',
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     padding: Spacing.three,
-    borderRadius: 18,
-    backgroundColor: 'rgba(185,28,28,0.22)',
+    borderRadius: 16,
+    backgroundColor: 'rgba(239,68,68,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(254,202,202,0.24)',
+    borderColor: 'rgba(239,68,68,0.3)',
+    marginHorizontal: 12,
   },
   supportLayout: {
     flexDirection: 'row',
-    gap: Spacing.three,
+    gap: 16,
     alignItems: 'stretch',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   supportLayoutCompact: {
     flexDirection: 'column',
     flex: 1,
     gap: 0,
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
   conversationListPanel: {
-    flex: 0.8,
+    flex: 0.75,
     minWidth: 300,
-    borderRadius: 20,
+    maxWidth: 420,
+    borderRadius: 24,
     padding: 0,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 12,
   },
   conversationListPanelFull: {
     flex: 1,
+    maxWidth: undefined,
     borderRadius: 0,
     borderWidth: 0,
     padding: 0,
     margin: 0,
+    backgroundColor: 'transparent',
   },
   inboxTabs: {
     height: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     borderRadius: 24,
     padding: 4,
     gap: 4,
     marginVertical: 12,
+    marginHorizontal: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   inboxTabActive: {
     flex: 1,
@@ -1867,10 +2071,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    backgroundColor: '#1b2d42',
+    gap: 8,
+    backgroundColor: 'rgba(15,110,255,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(15,110,255,0.35)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
   },
   inboxTab: {
     flex: 1,
@@ -1881,7 +2090,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   inboxTabTextActive: {
-    color: '#ffffff',
+    color: '#0f6eff',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
@@ -1890,79 +2099,97 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   tabBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    paddingHorizontal: 6,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabBadgeText: {
     color: '#ffffff',
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 15,
     fontWeight: '900',
   },
   conversationList: {
     paddingBottom: Spacing.two,
   },
   conversationRow: {
-    minHeight: 82,
+    minHeight: 84,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 18,
+    marginHorizontal: 12,
+    marginVertical: 4,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.015)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    marginBottom: 10,
+    borderColor: 'rgba(255,255,255,0.04)',
   },
   conversationRowUrgent: {
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
     borderColor: 'rgba(239, 68, 68, 0.15)',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
   },
   conversationRowActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.08)',
-    borderColor: 'rgba(59, 130, 246, 0.30)',
+    backgroundColor: 'rgba(15, 110, 255, 0.08)',
+    borderColor: 'rgba(15, 110, 255, 0.25)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   conversationAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#64748b',
+    backgroundColor: 'rgba(148,163,184,0.15)',
     position: 'relative',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   avatarStatusDot: {
     position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    borderWidth: 2,
-    borderColor: '#06111f',
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 3,
+    borderColor: '#141e2e',
   },
   conversationAvatarUrgent: {
     backgroundColor: '#ef4444',
   },
   conversationAvatarText: {
     color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: '900',
   },
   conversationCopy: {
     flex: 1,
     minWidth: 0,
-    gap: 4,
+    gap: 5,
   },
   conversationTop: {
     flexDirection: 'row',
@@ -1972,10 +2199,11 @@ const styles = StyleSheet.create({
   },
   conversationName: {
     flex: 1,
-    color: '#ffffff',
+    color: '#f8fafc',
     fontSize: 16,
     lineHeight: 22,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
   conversationTime: {
     color: '#64748b',
@@ -1987,137 +2215,151 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   conversationMiddle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 4,
+    gap: 6,
+    marginTop: 2,
   },
   conversationSource: {
     color: '#64748b',
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   conversationRight: {
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 8,
   },
   conversationStatusLabel: {
     color: '#64748b',
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '800',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   conversationStatusLabelUrgent: {
-    color: '#ef4444',
+    color: '#f87171',
   },
   statusBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
     borderWidth: 1,
   },
   statusBadgeUrgent: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderColor: 'rgba(239,68,68,0.3)',
   },
   statusText: {
-    fontSize: 11,
-    lineHeight: 13,
+    fontSize: 10,
+    lineHeight: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   statusTextUrgent: {
-    color: '#dc2626',
+    color: '#f87171',
   },
   conversationSection: {
-    minHeight: 46,
-    paddingHorizontal: Spacing.three,
+    minHeight: 42,
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    gap: 10,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
   },
   conversationSectionText: {
     color: '#94a3b8',
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 15,
     fontWeight: '900',
     textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
   },
   conversationSectionUrgent: {
-    color: '#ef4444',
+    color: '#f87171',
   },
   conversationSectionBadge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 7,
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#dcfce7',
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.25)',
   },
   conversationSectionBadgeUrgent: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    borderColor: 'rgba(239,68,68,0.35)',
   },
   conversationSectionBadgeText: {
-    color: '#047857',
+    color: '#0f6eff',
     fontSize: 11,
     lineHeight: 15,
     fontWeight: '900',
   },
   conversationSectionBadgeTextUrgent: {
-    color: '#ef4444',
+    color: '#f87171',
   },
   unreadBadge: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#246cff',
+    backgroundColor: '#0f6eff',
   },
   chatPanel: {
-    flex: 1.2,
-    minWidth: 400,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    flex: 1.25,
+    minWidth: 380,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 12,
   },
   chatPanelFull: {
     flex: 1,
     borderRadius: 0,
     borderWidth: 0,
     padding: 0,
-    backgroundColor: '#06111f',
+    backgroundColor: '#141e2e',
     flexDirection: 'column',
     minHeight: '100%',
   },
   chatHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: '#0a1628',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(15,23,42,0.92)',
   },
   chatActionRow: {
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: '#0a1628',
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(15,23,42,0.7)',
   },
   messageList: {
     flex: 1,
@@ -2129,53 +2371,66 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   chatActionButton: {
-    minHeight: 42,
-    borderRadius: 16,
-    paddingHorizontal: Spacing.three,
+    minHeight: 44,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   chatActionButtonActive: {
-    backgroundColor: '#03a84e',
-    borderColor: '#03a84e',
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderColor: 'rgba(15,110,255,0.35)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 5,
   },
   chatActionButtonClose: {
     marginLeft: 'auto',
-    backgroundColor: 'rgba(239,68,68,0.10)',
-    borderColor: 'rgba(239,68,68,0.25)',
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderColor: 'rgba(239,68,68,0.35)',
   },
   chatActionTextClose: {
-    color: '#ef4444',
+    color: '#f87171',
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '900',
   },
   chatActionText: {
-    color: '#ffffff',
+    color: '#e2e8f0',
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: '900',
+    fontWeight: '800',
   },
   chatActionTextActive: {
-    color: '#ffffff',
+    color: '#0f6eff',
+    fontWeight: '900',
   },
   chatAvatar: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#246cff',
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(15,110,255,0.3)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
   },
   chatAvatarText: {
     color: '#ffffff',
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '900',
   },
   chatHeaderCopy: {
@@ -2184,28 +2439,32 @@ const styles = StyleSheet.create({
   },
   chatTitle: {
     color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: '900',
+    letterSpacing: 0.3,
   },
   chatMeta: {
     color: '#94a3b8',
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
   },
   chatStatusPill: {
-    minHeight: 34,
-    borderRadius: 17,
-    paddingHorizontal: 12,
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    gap: 8,
+    backgroundColor: 'rgba(15,110,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.25)',
   },
   chatStatusWaiting: {
     backgroundColor: 'rgba(239,68,68,0.15)',
+    borderColor: 'rgba(239,68,68,0.35)',
   },
   chatStatusText: {
     color: '#ffffff',
@@ -2224,161 +2483,920 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: '86%',
-    borderRadius: 20,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
   },
   messageBubbleAdmin: {
-    backgroundColor: '#03a84e',
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderColor: 'rgba(15,110,255,0.35)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
   },
   messageBubbleSystem: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.06)',
     alignSelf: 'center',
   },
   messageText: {
-    color: '#ffffff',
+    color: '#f1f5f9',
     fontSize: 15,
     lineHeight: 22,
-    fontWeight: '700',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   messageTextAdmin: {
     color: '#ffffff',
+    fontWeight: '700',
   },
   messageTextSystem: {
     color: '#94a3b8',
     fontSize: 13,
     lineHeight: 18,
+    fontStyle: 'italic',
   },
   messageTime: {
     color: '#64748b',
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: '900',
-    marginTop: 5,
+    fontWeight: '700',
+    marginTop: 6,
   },
   messageTimeAdmin: {
-    color: 'rgba(255,255,255,0.80)',
+    color: 'rgba(255,255,255,0.85)',
   },
   templatesContainer: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: '#0a1424',
+    backgroundColor: 'rgba(15,23,42,0.85)',
   },
   templatesScroll: {
-    gap: 8,
+    gap: 10,
   },
   templatePill: {
-    backgroundColor: '#1b2d42',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
   templatePillText: {
-    color: '#edf4ff',
+    color: '#e2e8f0',
     fontSize: 13,
     fontWeight: '700',
   },
   replyBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    paddingBottom: 10,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: '#0d1a2d',
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(15,23,42,0.95)',
   },
   replyInput: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
     maxHeight: 120,
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     color: '#ffffff',
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '600',
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   sendReplyButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#03a84e',
+    backgroundColor: 'rgba(15,110,255,0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(15,110,255,0.3)',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
   },
   emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.five,
+    gap: 12,
   },
   emptyTitle: {
     color: '#ffffff',
-    fontSize: 19,
-    lineHeight: 24,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '900',
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   emptyText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: '700',
+    color: '#64748b',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
     textAlign: 'center',
-    marginTop: 6,
+    maxWidth: 280,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
     marginRight: 4,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.65,
+    transform: [{ scale: 0.96 }],
   },
   adminBackground: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
+    backgroundColor: '#141e2e',
   },
-  adminTopBand: {
-    position: 'absolute',
-    top: -50,
-    left: -100,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
-    backgroundColor: 'rgba(3,168,78,0.12)',
+  auroraBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#141e2e',
   },
-  adminMiddleGlow: {
+  auroraTeal: {
     position: 'absolute',
-    top: '35%',
-    right: '15%',
+    top: -120,
+    left: -180,
+    width: 650,
+    height: 650,
+    borderRadius: 325,
+    backgroundColor: 'rgba(15,110,255,0.14)',
+  },
+  auroraPurple: {
+    position: 'absolute',
+    top: '15%',
+    right: -220,
+    width: 600,
+    height: 600,
+    borderRadius: 300,
+    backgroundColor: 'rgba(139,92,246,0.1)',
+  },
+  auroraBlue: {
+    position: 'absolute',
+    bottom: -180,
+    left: '5%',
+    width: 550,
+    height: 550,
+    borderRadius: 275,
+    backgroundColor: 'rgba(15,110,255,0.12)',
+  },
+  meshGradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(20,30,46,0.15)',
+  },
+
+  /* ── TOP BAR ──────────────────────────────────────── */
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(20,30,46,0.88)',
+    gap: 10,
+  },
+  topBarBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    flex: 1,
+  },
+  topBarLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15,110,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarLogoV: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0f6eff',
+    letterSpacing: -0.5,
+  },
+  topBarName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f1f5f9',
+    letterSpacing: 0.2,
+  },
+  topBarNameAccent: {
+    color: '#0f6eff',
+  },
+  topBarLive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+  },
+  topBarLiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#03a84e',
+  },
+  topBarLiveText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 1,
+  },
+  topBarMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  topBarMetricUrgent: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.25)',
+    alignItems: 'center',
+    minWidth: 36,
+  },
+  topBarMetricUrgentNum: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#f87171',
+    lineHeight: 16,
+  },
+  topBarMetricUrgentLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#f87171',
+    letterSpacing: 0.8,
+    opacity: 0.7,
+  },
+  topBarMetricBlue: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15,110,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.22)',
+    alignItems: 'center',
+    minWidth: 36,
+  },
+  topBarMetricBlueNum: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f6eff',
+    lineHeight: 16,
+  },
+  topBarMetricBlueLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#0f6eff',
+    letterSpacing: 0.8,
+    opacity: 0.7,
+  },
+  topBarMetricGray: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    minWidth: 36,
+  },
+  topBarMetricGrayNum: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#64748b',
+    lineHeight: 16,
+  },
+  topBarMetricGrayLabel: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.8,
+  },
+  topBarLogoutBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+
+  /* ── MAIN LAYOUT ──────────────────────────────────── */
+  mainLayout: {
+    flex: 1,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  mainLayoutCompact: {
+    flexDirection: 'column',
+  },
+
+  /* ── SIDE PANEL ───────────────────────────────────── */
+  sidePanel: {
     width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(139,92,246,0.06)',
+    flexDirection: 'column',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    overflow: 'hidden',
   },
-  adminBottomBand: {
+  sidePanelFull: {
+    width: '100%',
+    flexDirection: 'column',
+    borderRightWidth: 0,
+    flex: 1,
+  },
+  sideSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    margin: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  sideSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#cbd5e1',
+    fontWeight: '500',
+  },
+  sideStats: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+  },
+  sideStatCard: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center',
+    gap: 1,
+  },
+  sideStatCardUrgent: {
+    borderColor: 'rgba(239,68,68,0.2)',
+    backgroundColor: 'rgba(239,68,68,0.06)',
+  },
+  sideStatNum: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#64748b',
+    lineHeight: 20,
+  },
+  sideStatLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#475569',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  sideLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  sideEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 10,
+  },
+  sideEmptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  sideEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  sideEmptyText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#4a6080',
+    textAlign: 'center',
+    lineHeight: 17,
+    maxWidth: 220,
+  },
+  sideList: {
+    flex: 1,
+  },
+  sideSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  sideSectionDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+  },
+  sideSectionText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 1.2,
+    flex: 1,
+  },
+  sideSectionBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+  },
+  sideSectionBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#f87171',
+  },
+
+  /* ── CHAT ROW ─────────────────────────────────────── */
+  chatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingRight: 12,
+    paddingLeft: 0,
+    marginHorizontal: 8,
+    marginVertical: 2,
+    borderRadius: 12,
+    gap: 10,
+    overflow: 'hidden',
+  },
+  chatRowActive: {
+    backgroundColor: 'rgba(15,110,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.2)',
+  },
+  chatRowUrgent: {
+    backgroundColor: 'rgba(239,68,68,0.05)',
+  },
+  chatRowAccentBar: {
+    width: 3,
+    height: 44,
+    borderRadius: 2,
+    marginLeft: 4,
+  },
+  chatRowAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  chatRowAvatarText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  chatRowStatusDot: {
     position: 'absolute',
-    right: -150,
-    bottom: -100,
-    width: 500,
-    height: 500,
-    borderRadius: 250,
-    backgroundColor: 'rgba(36,108,255,0.10)',
+    bottom: -1,
+    right: -1,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#141e2e',
+  },
+  chatRowBody: {
+    flex: 1,
+    gap: 2,
+  },
+  chatRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  chatRowName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94a3b8',
+    flex: 1,
+  },
+  chatRowNameActive: {
+    color: '#e2e8f0',
+  },
+  chatRowTime: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#3d6090',
+  },
+  chatRowPreview: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748b',
+    lineHeight: 16,
+  },
+  chatRowSource: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#3d6090',
+  },
+  chatRowBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  chatRowBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  /* ── CHAT AREA ────────────────────────────────────── */
+  chatArea: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  chatAreaFull: {
+    width: '100%',
+  },
+  chatTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(20,30,46,0.85)',
+  },
+  chatBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  chatTopAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  chatTopAvatarText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  chatTopOnlineDot: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#03a84e',
+    borderWidth: 2,
+    borderColor: '#141e2e',
+  },
+  chatTopInfo: {
+    flex: 1,
+    gap: 1,
+  },
+  chatTopName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#e2e8f0',
+    letterSpacing: 0.1,
+  },
+  chatTopMeta: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748b',
+  },
+
+  /* ── TOOLBAR ──────────────────────────────────────── */
+  chatToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(20,30,46,0.7)',
+  },
+  toolBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  toolBtnBlue: {
+    backgroundColor: 'rgba(15,110,255,0.12)',
+    borderColor: 'rgba(15,110,255,0.3)',
+  },
+  toolBtnPurple: {
+    backgroundColor: 'rgba(139,92,246,0.12)',
+    borderColor: 'rgba(139,92,246,0.3)',
+  },
+  toolBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  toolBtnTextBlue: {
+    color: '#0f6eff',
+  },
+  toolBtnTextPurple: {
+    color: '#a78bfa',
+  },
+  toolBtnSpacer: {
+    flex: 1,
+  },
+  toolBtnResolve: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(34,197,94,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.25)',
+  },
+  toolBtnResolveText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#22c55e',
+  },
+
+  /* ── MESSAGES ─────────────────────────────────────── */
+  msgScroll: {
+    flex: 1,
+  },
+  msgScrollContent: {
+    padding: 14,
+    gap: 8,
+    paddingBottom: 20,
+  },
+  msgLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  sysMsgRow: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  sysMsgText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4a6080',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  bubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    maxWidth: '85%',
+  },
+  bubbleRowAdmin: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
+  },
+  bubbleVisitorAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  bubbleVisitorAvatarText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  bubble: {
+    maxWidth: 280,
+    padding: 11,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    gap: 4,
+  },
+  bubbleAdmin: {
+    backgroundColor: 'rgba(15,110,255,0.18)',
+    borderColor: 'rgba(15,110,255,0.3)',
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 4,
+  },
+  bubbleText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#cbd5e1',
+    lineHeight: 20,
+  },
+  bubbleTextAdmin: {
+    color: '#e2e8f0',
+  },
+  bubbleTime: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4a6080',
+    textAlign: 'right',
+  },
+  bubbleTimeAdmin: {
+    color: 'rgba(147,197,253,0.5)',
+  },
+
+  /* ── QUICK REPLIES ────────────────────────────────── */
+  quickBar: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(20,30,46,0.7)',
+  },
+  quickBarScroll: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  quickChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  quickChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+
+  /* ── INPUT BAR ────────────────────────────────────── */
+  msgInputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    padding: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(20,30,46,0.92)',
+  },
+  msgInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#e2e8f0',
+  },
+  msgSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f6eff',
+    shadowColor: '#0f6eff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  msgSendBtnDisabled: {
+    backgroundColor: 'rgba(15,110,255,0.2)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+
+  /* ── CHAT PLACEHOLDER ─────────────────────────────── */
+  chatPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    padding: 32,
+  },
+  chatPlaceholderIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15,110,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  chatPlaceholderTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#94a3b8',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  chatPlaceholderText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#4a6080',
+    textAlign: 'center',
+    lineHeight: 19,
+    maxWidth: 240,
   },
 });

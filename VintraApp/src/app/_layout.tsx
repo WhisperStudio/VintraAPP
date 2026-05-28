@@ -11,6 +11,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { VintraChatWidget } from '@/components/vintra-chat-widget';
 import { firebaseAuth } from '@/lib/firebase';
+import { LanguageProvider } from '@/lib/i18n';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -42,6 +43,7 @@ export default function RootLayout() {
   const isLoggedIn = authReady && !!user;
 
   return (
+    <LanguageProvider>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {!authReady ? (
@@ -68,5 +70,6 @@ export default function RootLayout() {
         </View>
       )}
     </ThemeProvider>
+    </LanguageProvider>
   );
 }

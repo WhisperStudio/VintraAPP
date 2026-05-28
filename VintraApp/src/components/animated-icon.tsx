@@ -40,39 +40,6 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
   const overlayOpacity = useSharedValue(1);
   const overlayTranslateY = useSharedValue(0);
 
-  // Play a beautiful futuristic start audio chime
-  useEffect(() => {
-    let soundObject: any = null;
-
-    async function playStartupSound() {
-      // Safe guard check: Check if native module is compiled and registered.
-      // If the native module does not exist, exit safely without calling require('expo-av')
-      const hasExponentAV = NativeModules.ExponentAV || NativeModules.ExpoAV || NativeModules.RNExponentAV;
-      if (!hasExponentAV) {
-        return;
-      }
-
-      try {
-        const { Audio } = require('expo-av');
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav' },
-          { shouldPlay: true, volume: 0.4 }
-        );
-        soundObject = sound;
-      } catch (err) {
-        console.warn('Could not play startup chime:', err);
-      }
-    }
-
-    playStartupSound();
-
-    return () => {
-      if (soundObject) {
-        soundObject.unloadAsync().catch(() => {});
-      }
-    };
-  }, []);
-
   useEffect(() => {
     logoOpacity.value = withDelay(180, withTiming(1, { duration: 380 }));
     logoScale.value = withDelay(180, withSpring(1, { damping: 9, stiffness: 70 }));
