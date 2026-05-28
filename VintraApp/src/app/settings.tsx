@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, Pressable, Alert } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, Pressable, Alert } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTranslation, type RawLang } from '@/lib/i18n';
+import { resolveAllAdminProfiles, fetchWidgets, type AdminProfile, type Widget } from '@/lib/admin-chat';
 
 function MovingBackground() {
   const move = useSharedValue(0);
@@ -79,6 +80,11 @@ export default function SettingsScreen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
 
+  type WidgetEntry = Widget & { businessId: string; businessName: string };
+  const [allWidgets, setAllWidgets] = useState<WidgetEntry[]>([]);
+  const [defaultWidgetKey, setDefaultWidgetKeyState] = useState<string>('');
+  const [loadingWidgets, setLoadingWidgets] = useState(false);
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -94,6 +100,7 @@ export default function SettingsScreen() {
     };
     loadSettings();
     const unsub = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
+    AsyncStorage.getItem('@vintra_default_widget').then(v => { if (v) setDefaultWidgetKeyState(v); }).catch(() => {});
     return () => unsub();
   }, []);
 
@@ -109,6 +116,35 @@ export default function SettingsScreen() {
     setVibrationEnabled(val);
     AsyncStorage.setItem('@vintra_settings_vib', String(val)).catch(console.error);
   };
+
+  // Load chatbots when user signs in
+  useEffect(() => {
+    if (!user) { setAllWidgets([]); return; }
+    setLoadingWidgets(true);
+    resolveAllAdminProfiles(user)
+      .then(async (profiles: AdminProfile[]) => {
+        const entries: WidgetEntry[] = [];
+        for (const profile of profiles) {
+          const ws = await fetchWidgets(profile.businessId);
+          for (const w of ws) {
+            entries.push({ ...w, businessId: profile.businessId, businessName: profile.businessName || profile.businessId });
+          }
+        }
+        setAllWidgets(entries);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingWidgets(false));
+  }, [user?.uid]);
+
+  async function setDefaultWidget(key: string) {
+    const next = key === defaultWidgetKey ? '' : key;
+    setDefaultWidgetKeyState(next);
+    if (next) {
+      await AsyncStorage.setItem('@vintra_default_widget', next).catch(() => {});
+    } else {
+      await AsyncStorage.removeItem('@vintra_default_widget').catch(() => {});
+    }
+  }
 
   async function handleSignOut() {
     Alert.alert(
@@ -213,6 +249,49 @@ export default function SettingsScreen() {
             ))}
           </View>
         </View>
+
+        {/* Chatbots */}
+        {(loadingWidgets || allWidgets.length > 0) && (
+          <View style={styles.panel}>
+            <ThemedText style={styles.sectionTitle}>Chatbots</ThemedText>
+            <View style={styles.divider} />
+            {loadingWidgets ? (
+              <ActivityIndicator color="#0f6eff" style={{ paddingVertical: 14 }} />
+            ) : (
+              allWidgets.map((w) => {
+                const isDefault = defaultWidgetKey === w.key;
+                return (
+                  <Pressable
+                    key={w.key}
+                    onPress={() => setDefaultWidget(w.key)}
+                    style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
+                    <View style={[styles.settingIcon, { backgroundColor: isDefault ? '#03a84e' : '#7c3aed' }]}>
+                      <SymbolView
+                        name={{ ios: 'bubble.left.fill', android: 'chat_bubble', web: 'chat_bubble' }}
+                        size={20}
+                        tintColor="#ffffff"
+                      />
+                    </View>
+                    <View style={styles.settingContent}>
+                      <ThemedText style={styles.settingLabel}>{w.name}</ThemedText>
+                      <ThemedText style={styles.settingDescription}>{w.businessName}</ThemedText>
+                    </View>
+                    {isDefault && (
+                      <View style={styles.defaultBadge}>
+                        <SymbolView
+                          name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                          size={14}
+                          tintColor="#03a84e"
+                        />
+                        <Text style={styles.defaultBadgeText}>Default</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        )}
 
         {/* Account */}
         {user ? (
@@ -434,5 +513,21 @@ const styles = StyleSheet.create({
   },
   langOptionTextActive: {
     color: '#ffffff',
+  },
+  defaultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(3,168,78,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(3,168,78,0.25)',
+  },
+  defaultBadgeText: {
+    color: '#03a84e',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

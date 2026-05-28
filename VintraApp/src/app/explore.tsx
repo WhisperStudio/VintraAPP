@@ -1,5 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
@@ -197,7 +198,13 @@ export default function AnalyticsScreen() {
   const [allChats, setAllChats] = useState<SupportChat[]>([]);
   const [period, setPeriod] = useState<Period>('7d');
   const [tab, setTab] = useState<Tab>('oversikt');
+  const [cachedAt, setCachedAt] = useState<Date | null>(null);
+  const liveLoaded = useRef(false);
   const now = useMemo(() => new Date(), []);
+
+  // Lightweight shape stored in AsyncStorage (only fields analytics needs)
+  type CachedChat = { id: string; status: string; updatedAt: string; countryCode?: string; messages: { role: string }[] };
+  const cacheKey = (bId: string) => `@vintra_analytics_${bId}`;
 
   useEffect(() => {
     return onAuthStateChanged(firebaseAuth, u => {
@@ -206,9 +213,41 @@ export default function AnalyticsScreen() {
     });
   }, []);
 
+  // Restore cached analytics when a business profile loads
   useEffect(() => {
     if (!adminProfile) return;
-    return listenSupportChats(adminProfile.businessId, setAllChats, console.error);
+    liveLoaded.current = false;
+    AsyncStorage.getItem(cacheKey(adminProfile.businessId))
+      .then(raw => {
+        if (!raw || liveLoaded.current) return;
+        const cached: CachedChat[] = JSON.parse(raw);
+        setAllChats(cached as unknown as SupportChat[]);
+        // Pick the most recent updatedAt from cached chats as the "saved at" timestamp
+        const latest = cached.reduce((max, c) => {
+          const t = new Date(c.updatedAt).getTime();
+          return t > max ? t : max;
+        }, 0);
+        setCachedAt(latest ? new Date(latest) : new Date());
+      })
+      .catch(() => {});
+  }, [adminProfile?.businessId]);
+
+  // Live listener — saves a lite cache snapshot on every update
+  useEffect(() => {
+    if (!adminProfile) return;
+    return listenSupportChats(adminProfile.businessId, (chats) => {
+      liveLoaded.current = true;
+      setCachedAt(null);
+      setAllChats(chats);
+      const lite: CachedChat[] = chats.map(c => ({
+        id: c.id,
+        status: c.status,
+        updatedAt: c.updatedAt instanceof Date ? c.updatedAt.toISOString() : String(c.updatedAt),
+        countryCode: c.countryCode,
+        messages: c.messages.map(m => ({ role: m.role })),
+      }));
+      AsyncStorage.setItem(cacheKey(adminProfile.businessId), JSON.stringify(lite)).catch(() => {});
+    }, console.error);
   }, [adminProfile]);
 
   const chats = useMemo(() => {
@@ -262,7 +301,14 @@ export default function AnalyticsScreen() {
             <Text style={s.headerTitle}>{t('analyse_title')}</Text>
             <Text style={s.headerSub}>{t('analyse_sub')}</Text>
           </View>
-          <Text style={s.headerUpdated}>{t('analyse_updated')}{'\n'}{fmtDate(now)}</Text>
+          {cachedAt ? (
+            <View style={s.cachedBadge}>
+              <SymbolView name={{ ios: 'clock.arrow.circlepath', android: 'history', web: 'history' }} size={11} tintColor="#64748b" />
+              <Text style={s.cachedBadgeText}>Cached{'\n'}{fmtDate(cachedAt)}</Text>
+            </View>
+          ) : (
+            <Text style={s.headerUpdated}>{t('analyse_updated')}{'\n'}{fmtDate(now)}</Text>
+          )}
         </View>
 
         {/* ── 6 Metric cards ─────────────────────────────────── */}
@@ -421,6 +467,8 @@ const s = StyleSheet.create({
   headerTitle: { color: '#f1f5f9', fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
   headerSub: { color: '#64748b', fontSize: 12, fontWeight: '500', marginTop: 4, lineHeight: 17 },
   headerUpdated: { color: '#475569', fontSize: 10, fontWeight: '600', textAlign: 'right', lineHeight: 15 },
+  cachedBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, padding: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  cachedBadgeText: { color: '#475569', fontSize: 10, fontWeight: '600', lineHeight: 15 },
 
   /* Metric grid */
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

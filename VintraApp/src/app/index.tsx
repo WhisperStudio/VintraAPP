@@ -39,18 +39,21 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import {
+  fetchWidgets,
   listenSupportChat,
   closeSupportChat,
   listenSupportChats,
-  resolveAdminProfile,
+  resolveAllAdminProfiles,
   sendSupportReply,
   setSupportChatStatus,
   type AdminProfile,
   type SupportChat,
   type SupportMessage,
+  type Widget,
 } from '@/lib/admin-chat';
 import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
+import { isSuperAdmin, SuperAdminPanel } from '@/components/super-admin-panel';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
@@ -335,6 +338,9 @@ function AdminBackground() {
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
   const insets = useSafeAreaInsets();
   const { t: adminT } = useTranslation();
+  const [superAdminOpen, setSuperAdminOpen] = useState(false);
+  const [bizPickerOpen, setBizPickerOpen] = useState(false);
+  const [allProfiles, setAllProfiles] = useState<AdminProfile[]>([]);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
   const [accessError, setAccessError] = useState('');
@@ -346,26 +352,61 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [fetchedWidgets, setFetchedWidgets] = useState<Widget[]>([]);
+  const [selectedWidgetKey, setSelectedWidgetKey] = useState<string>('all');
   const messageListRef = useRef<ScrollView>(null);
+
+  // Fetch named widgets from chatWidgets subcollection whenever the active business changes
+  useEffect(() => {
+    if (!adminProfile) { setFetchedWidgets([]); setSelectedWidgetKey('all'); return; }
+    setSelectedWidgetKey('all');
+    fetchWidgets(adminProfile.businessId).then(async (ws: Widget[]) => {
+      setFetchedWidgets(ws);
+      // Apply the saved default widget key if it matches one of the fetched widgets
+      if (ws.length > 1) {
+        const saved = await AsyncStorage.getItem('@vintra_default_widget').catch(() => null);
+        if (saved && ws.some(w => w.key === saved)) {
+          setSelectedWidgetKey(saved);
+        }
+      }
+    });
+  }, [adminProfile?.businessId]);
 
   const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Agent';
   const visibleChats = chats.filter((chat) => chat.status !== 'closed');
-  
-  // Dynamic filtering based on search query
-  const filteredVisibleChats = visibleChats.filter((chat) => {
+
+  // Full widget list: start from Firestore, append any widgetKeys seen in chats that aren't listed there
+  const uniqueWidgets: Widget[] = useMemo(() => {
+    const result: Widget[] = [...fetchedWidgets];
+    const knownKeys = new Set(fetchedWidgets.map(w => w.key));
+    for (const chat of visibleChats) {
+      if (chat.widgetKey && !knownKeys.has(chat.widgetKey)) {
+        knownKeys.add(chat.widgetKey);
+        result.push({ key: chat.widgetKey, name: chat.widgetKey });
+      }
+    }
+    return result;
+  }, [fetchedWidgets, visibleChats]);
+
+  // Filter chats by selected widget, then by search query
+  const widgetChats = selectedWidgetKey === 'all'
+    ? visibleChats
+    : visibleChats.filter(c => c.widgetKey === selectedWidgetKey);
+
+  const filteredVisibleChats = widgetChats.filter((chat) => {
     const visitorName = chat.visitorName || 'Visitor';
     const lastMsg = chat.messages.at(-1)?.text || chat.preview || '';
     return visitorName.toLowerCase().includes(searchQuery.toLowerCase()) || 
            lastMsg.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  const activeChats = visibleChats.filter((chat) => chat.status !== 'ai-active').length;
-  const waitingChats = visibleChats.filter((chat) => chat.status === 'needs-human').length;
+  const activeChats = widgetChats.filter((chat) => chat.status !== 'ai-active').length;
+  const waitingChats = widgetChats.filter((chat) => chat.status === 'needs-human').length;
   const unansweredChats = filteredVisibleChats.filter((chat) => chat.status === 'needs-human');
   const servedChats = filteredVisibleChats.filter((chat) => chat.status !== 'needs-human');
-  const selectedChatFromList = visibleChats.find((chat) => chat.id === selectedChatId);
+  const selectedChatFromList = widgetChats.find((chat) => chat.id === selectedChatId);
   const activeChat = selectedChat || selectedChatFromList || null;
-  const openChat = compact ? activeChat : (activeChat || visibleChats[0] || null);
+  const openChat = compact ? activeChat : (activeChat || widgetChats[0] || null);
 
   useEffect(() => {
     if (openChat && messageListRef.current) {
@@ -392,24 +433,18 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     setAccessError('');
     setAdminProfile(null);
 
-    resolveAdminProfile(user)
-      .then((profile) => {
-        if (!mounted) {
-          return;
-        }
-
-        setAdminProfile(profile);
+    resolveAllAdminProfiles(user)
+      .then((profiles) => {
+        if (!mounted) return;
+        setAllProfiles(profiles);
+        setAdminProfile(profiles[0] ?? null);
         setAdminReady(true);
-
-        if (!profile) {
+        if (profiles.length === 0) {
           setAccessError('This account does not have access to live inquiries yet.');
         }
       })
-      .catch((error) => {
-        if (!mounted) {
-          return;
-        }
-
+      .catch((error: unknown) => {
+        if (!mounted) return;
         setAccessError(error instanceof Error ? error.message : 'Could not check account access.');
         setAdminReady(true);
       });
@@ -564,13 +599,28 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 <View style={styles.topBarLogo}>
                   <Text style={styles.topBarLogoV}>V</Text>
                 </View>
-                <View>
-                  <Text style={styles.topBarName}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
-                  <View style={styles.topBarLive}>
-                    <View style={styles.topBarLiveDot} />
-                    <Text style={styles.topBarLiveText}>LIVE CONSOLE</Text>
+                {allProfiles.length > 1 ? (
+                  <Pressable
+                    onPress={() => setBizPickerOpen(true)}
+                    style={({ pressed }) => [styles.bizSwitchBtn, pressed && styles.pressed]}>
+                    <Text style={styles.bizSwitchName} numberOfLines={1}>
+                      {adminProfile?.businessName || 'Workspace'}
+                    </Text>
+                    <SymbolView
+                      name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }}
+                      size={11}
+                      tintColor="#64748b"
+                    />
+                  </Pressable>
+                ) : (
+                  <View>
+                    <Text style={styles.topBarName}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
+                    <View style={styles.topBarLive}>
+                      <View style={styles.topBarLiveDot} />
+                      <Text style={styles.topBarLiveText}>LIVE CONSOLE</Text>
+                    </View>
                   </View>
-                </View>
+                )}
               </View>
 
               <View style={styles.topBarMetrics}>
@@ -590,12 +640,88 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 </View>
               </View>
 
+              {isSuperAdmin(user.email) && (
+                <Pressable
+                  onPress={() => setSuperAdminOpen(true)}
+                  style={({ pressed }) => [styles.superAdminBtn, pressed && styles.pressed]}>
+                  <SymbolView
+                    name={{ ios: 'bolt.fill', android: 'bolt', web: 'bolt' }}
+                    size={14}
+                    tintColor="#f97316"
+                  />
+                </Pressable>
+              )}
               <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.topBarLogoutBtn, pressed && styles.pressed]}>
                 <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={16} tintColor="#475569" />
               </Pressable>
             </View>
             {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
           </>
+        )}
+
+        {isSuperAdmin(user.email) && (
+          <SuperAdminPanel
+            visible={superAdminOpen}
+            onClose={() => setSuperAdminOpen(false)}
+            userEmail={user.email!}
+          />
+        )}
+
+        {/* ── BUSINESS PICKER ──────────────────────────────── */}
+        {allProfiles.length > 1 && (
+          <Modal
+            visible={bizPickerOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setBizPickerOpen(false)}>
+            <Pressable
+              style={styles.bizPickerOverlay}
+              onPress={() => setBizPickerOpen(false)}>
+              <View
+                style={[styles.bizPickerCard, { marginTop: insets.top + 56 }]}
+                onStartShouldSetResponder={() => true}>
+                <Text style={styles.bizPickerTitle}>Switch workspace</Text>
+                <View style={styles.bizPickerDivider} />
+                {allProfiles.map((p) => {
+                  const isActive = adminProfile?.businessId === p.businessId;
+                  return (
+                    <Pressable
+                      key={p.businessId}
+                      onPress={() => {
+                        setAdminProfile(p);
+                        setChats([]);
+                        setSelectedChatId(null);
+                        setBizPickerOpen(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.bizPickerRow,
+                        isActive && styles.bizPickerRowActive,
+                        pressed && styles.pressed,
+                      ]}>
+                      <View style={[styles.bizPickerAvatar, isActive && styles.bizPickerAvatarActive]}>
+                        <Text style={[styles.bizPickerAvatarText, isActive && styles.bizPickerAvatarTextActive]}>
+                          {(p.businessName || p.businessId).slice(0, 1).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.bizPickerName, isActive && styles.bizPickerNameActive]}>
+                          {p.businessName || p.businessId}
+                        </Text>
+                        <Text style={styles.bizPickerRole}>{p.role}</Text>
+                      </View>
+                      {isActive && (
+                        <SymbolView
+                          name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                          size={16}
+                          tintColor="#03a84e"
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Pressable>
+          </Modal>
         )}
 
         {/* ── MAIN LAYOUT ─────────────────────────────────── */}
@@ -621,6 +747,57 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   </Pressable>
                 ) : null}
               </View>
+
+              {/* Chatbot / widget switcher */}
+              {uniqueWidgets.length > 1 && (
+                <View style={styles.widgetTabBar}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.widgetTabRow}>
+                    <Pressable
+                      onPress={() => { setSelectedWidgetKey('all'); setSelectedChatId(null); }}
+                      style={({ pressed }) => [styles.widgetTab, selectedWidgetKey === 'all' && styles.widgetTabActive, pressed && styles.pressed]}>
+                      <SymbolView
+                        name={{ ios: 'square.grid.2x2.fill', android: 'grid_view', web: 'grid_view' }}
+                        size={11}
+                        tintColor={selectedWidgetKey === 'all' ? '#fff' : '#475569'}
+                      />
+                      <Text style={[styles.widgetTabText, selectedWidgetKey === 'all' && styles.widgetTabTextActive]}>All</Text>
+                      {visibleChats.length > 0 && (
+                        <View style={[styles.widgetTabCount, selectedWidgetKey === 'all' && styles.widgetTabCountActive]}>
+                          <Text style={[styles.widgetTabCountText, selectedWidgetKey === 'all' && styles.widgetTabCountTextActive]}>
+                            {visibleChats.length}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                    {uniqueWidgets.map(w => {
+                      const isActive = selectedWidgetKey === w.key;
+                      const count = visibleChats.filter(c => c.widgetKey === w.key).length;
+                      const urgent = visibleChats.some(c => c.widgetKey === w.key && c.status === 'needs-human');
+                      return (
+                        <Pressable
+                          key={w.key}
+                          onPress={() => { setSelectedWidgetKey(w.key); setSelectedChatId(null); }}
+                          style={({ pressed }) => [styles.widgetTab, isActive && styles.widgetTabActive, pressed && styles.pressed]}>
+                          {!isActive && urgent && <View style={styles.widgetTabUrgentDot} />}
+                          <Text style={[styles.widgetTabText, isActive && styles.widgetTabTextActive]} numberOfLines={1}>
+                            {w.name}
+                          </Text>
+                          {count > 0 && (
+                            <View style={[styles.widgetTabCount, isActive && styles.widgetTabCountActive, !isActive && urgent && styles.widgetTabCountUrgent]}>
+                              <Text style={[styles.widgetTabCountText, isActive && styles.widgetTabCountTextActive]}>
+                                {count}
+                              </Text>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
 
               {/* Stats row */}
               <View style={styles.sideStats}>
@@ -2826,6 +3003,182 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
+  },
+  superAdminBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(249,115,22,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(249,115,22,0.3)',
+  },
+
+  /* ── Chatbot / widget tab bar ───────────────────────── */
+  widgetTabBar: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  widgetTabRow: {
+    flexDirection: 'row',
+    gap: 5,
+    paddingHorizontal: 10,
+  },
+  widgetTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  widgetTabActive: {
+    backgroundColor: '#0f6eff',
+    borderColor: 'rgba(15,110,255,0.55)',
+  },
+  widgetTabText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 100,
+  },
+  widgetTabTextActive: {
+    color: '#ffffff',
+  },
+  widgetTabUrgentDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#ef4444',
+  },
+  widgetTabCount: {
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  widgetTabCountActive: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  widgetTabCountUrgent: {
+    backgroundColor: 'rgba(239,68,68,0.18)',
+  },
+  widgetTabCountText: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  widgetTabCountTextActive: {
+    color: '#ffffff',
+  },
+
+  /* ── Business switcher button (top bar) ──────────────── */
+  bizSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    maxWidth: 160,
+  },
+  bizSwitchName: {
+    color: '#e2e8f0',
+    fontSize: 14,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+
+  /* ── Business picker modal ───────────────────────────── */
+  bizPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 16,
+  },
+  bizPickerCard: {
+    backgroundColor: '#141e2e',
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.7,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  bizPickerTitle: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+  },
+  bizPickerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    marginBottom: 4,
+  },
+  bizPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  bizPickerRowActive: {
+    backgroundColor: 'rgba(3,168,78,0.08)',
+    borderColor: 'rgba(3,168,78,0.2)',
+  },
+  bizPickerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bizPickerAvatarActive: {
+    backgroundColor: 'rgba(3,168,78,0.15)',
+  },
+  bizPickerAvatarText: {
+    color: '#64748b',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  bizPickerAvatarTextActive: {
+    color: '#03a84e',
+  },
+  bizPickerName: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bizPickerNameActive: {
+    color: '#ffffff',
+  },
+  bizPickerRole: {
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+    textTransform: 'capitalize',
   },
 
   /* ── MAIN LAYOUT ──────────────────────────────────── */

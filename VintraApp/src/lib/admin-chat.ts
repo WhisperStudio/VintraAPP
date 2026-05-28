@@ -2,6 +2,7 @@ import { getIdTokenResult, type User } from 'firebase/auth';
 import {
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -19,11 +20,31 @@ import {
 
 import { firebaseDb } from '@/lib/firebase';
 
+export type Widget = { key: string; name: string };
+
+export async function fetchWidgets(businessId: string): Promise<Widget[]> {
+  try {
+    const snap = await getDocs(collection(firebaseDb, `businesses/${businessId}/chatWidgets`));
+    if (!snap.empty) {
+      return snap.docs.map(d => {
+        const data = d.data();
+        const name = String(
+          data.name || data.widgetName || data.displayName || data.title ||
+          data.assistantConfig?.name || data.assistantConfig?.title || d.id,
+        );
+        return { key: d.id, name };
+      });
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
 export type AdminProfile = {
   businessId: string;
   email: string;
   role: string;
   displayName?: string;
+  businessName?: string;
 };
 
 export type SupportMessage = {
@@ -138,6 +159,80 @@ async function profileFromBusiness(user: User, businessId: string): Promise<Admi
   };
 }
 
+export async function resolveAllAdminProfiles(user: User): Promise<AdminProfile[]> {
+  const results: AdminProfile[] = [];
+  const seen = new Set<string>();
+
+  function bizName(bizData: Record<string, unknown> | undefined, fallback: string): string {
+    if (!bizData) return fallback;
+    return String(bizData.name || bizData.businessName || bizData.widgetName || bizData.displayName || '') || fallback;
+  }
+
+  // Owned businesses — add as owner directly without subcollection check,
+  // because the owner may not have a membership doc in their own business.
+  async function addOwnedBusiness(businessId: string, bizData: Record<string, unknown>): Promise<void> {
+    if (seen.has(businessId)) return;
+    seen.add(businessId);
+    results.push({
+      businessId,
+      role: 'owner',
+      email: String(user.email || ''),
+      displayName: user.displayName || undefined,
+      businessName: bizName(bizData, businessId),
+    });
+  }
+
+  // Non-owned businesses — verify via subcollection membership.
+  async function tryMemberBusiness(businessId: string, bizData?: Record<string, unknown>): Promise<void> {
+    if (seen.has(businessId)) return;
+    seen.add(businessId);
+    try {
+      const memberSnap = await getDoc(doc(firebaseDb, `businesses/${businessId}/users/${user.uid}`));
+      if (!memberSnap.exists()) return;
+      const data = memberSnap.data();
+      const role = String(data.role || '');
+      const status = String(data.status || 'active');
+      if (!ADMIN_ROLES.has(role) || status !== 'active') return;
+      if (!bizData) {
+        const bizDoc = await getDoc(doc(firebaseDb, 'businesses', businessId));
+        if (bizDoc.exists()) bizData = bizDoc.data() as Record<string, unknown>;
+      }
+      results.push({
+        businessId,
+        role,
+        email: String(data.email || user.email || ''),
+        displayName: data.displayName ? String(data.displayName) : user.displayName || undefined,
+        businessName: bizName(bizData, businessId),
+      });
+    } catch {
+      // Permission denied or network error for this business — skip silently.
+    }
+  }
+
+  // 1. JWT claim (may be a non-owned business the user is a member of)
+  const token = await getIdTokenResult(user, true).catch(() => null);
+  const claimedId = String(token?.claims.businessId || token?.claims.business_id || '');
+  if (claimedId) await tryMemberBusiness(claimedId);
+
+  // 2. All businesses owned by this user (bypasses subcollection)
+  try {
+    const ownedSnap = await getDocs(query(collection(firebaseDb, 'businesses'), where('ownerId', '==', user.uid)));
+    for (const biz of ownedSnap.docs) {
+      await addOwnedBusiness(biz.id, biz.data() as Record<string, unknown>);
+    }
+  } catch { /* ignore */ }
+
+  // 3. All businesses — catch any remaining member access
+  try {
+    const allSnap = await getDocs(collection(firebaseDb, 'businesses'));
+    for (const biz of allSnap.docs) {
+      await tryMemberBusiness(biz.id, biz.data() as Record<string, unknown>);
+    }
+  } catch { /* ignore */ }
+
+  return results;
+}
+
 export async function resolveAdminProfile(user: User): Promise<AdminProfile | null> {
   const token = await getIdTokenResult(user, true).catch(() => null);
   const claimedBusinessId = token?.claims.businessId || token?.claims.business_id;
@@ -238,19 +333,7 @@ export async function sendSupportReply(businessId: string, chat: SupportChat, te
 }
 
 export async function closeSupportChat(businessId: string, chat: SupportChat) {
-  const message = {
-    id: randomId(),
-    role: 'system',
-    text: 'The chat has been closed by an admin.',
-    createdAt: new Date(),
-  };
-
-  await updateDoc(doc(firebaseDb, `businesses/${businessId}/supportChats/${chat.id}`), {
-    status: 'closed',
-    updatedAt: serverTimestamp(),
-    messages: arrayUnion(message),
-    messageCount: increment(1),
-  });
+  await deleteDoc(doc(firebaseDb, `businesses/${businessId}/supportChats/${chat.id}`));
 }
 
 export async function setSupportChatStatus(businessId: string, chat: SupportChat, status: 'open' | 'ai-active') {
