@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, Pressable, Alert } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View, Pressable, Alert } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -18,6 +18,14 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTranslation, type RawLang } from '@/lib/i18n';
 import { resolveAllAdminProfiles, fetchWidgets, type AdminProfile, type Widget } from '@/lib/admin-chat';
+import {
+  getDefaultQuickReplies,
+  loadQuickReplies,
+  loadQuickRepliesEnabled,
+  saveQuickReplies,
+  saveQuickRepliesEnabled,
+  type QuickReply,
+} from '@/lib/quick-replies';
 
 function MovingBackground() {
   const move = useSharedValue(0);
@@ -74,11 +82,14 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 720;
-  const { t, savedLang, setLang } = useTranslation();
+  const { t, lang, savedLang, setLang } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
+  const [quickRepliesEnabled, setQuickRepliesEnabled] = useState(true);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>(() => getDefaultQuickReplies(lang));
+  const [expandedQuickReplyId, setExpandedQuickReplyId] = useState<string | null>('hello');
 
   type WidgetEntry = Widget & { businessId: string; businessName: string };
   const [allWidgets, setAllWidgets] = useState<WidgetEntry[]>([]);
@@ -94,6 +105,7 @@ export default function SettingsScreen() {
         if (notif !== null) setNotificationsEnabled(notif === 'true');
         if (sound !== null) setSoundEnabled(sound === 'true');
         if (vib !== null) setVibrationEnabled(vib === 'true');
+        setQuickRepliesEnabled(await loadQuickRepliesEnabled());
       } catch (e) {
         console.error('Error loading settings', e);
       }
@@ -103,6 +115,10 @@ export default function SettingsScreen() {
     AsyncStorage.getItem('@vintra_default_widget').then(v => { if (v) setDefaultWidgetKeyState(v); }).catch(() => {});
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    loadQuickReplies(lang).then(setQuickReplies).catch(() => setQuickReplies(getDefaultQuickReplies(lang)));
+  }, [lang]);
 
   const toggleNotifications = async (val: boolean) => {
     setNotificationsEnabled(val);
@@ -115,6 +131,44 @@ export default function SettingsScreen() {
   const toggleVibration = async (val: boolean) => {
     setVibrationEnabled(val);
     AsyncStorage.setItem('@vintra_settings_vib', String(val)).catch(console.error);
+  };
+  const toggleQuickReplies = async (val: boolean) => {
+    setQuickRepliesEnabled(val);
+    saveQuickRepliesEnabled(val).catch(console.error);
+  };
+
+  const updateQuickReply = (id: string, field: 'label' | 'value', value: string) => {
+    const next = quickReplies.map(reply => (reply.id === id ? { ...reply, [field]: value } : reply));
+    setQuickReplies(next);
+    saveQuickReplies(lang, next).catch(console.error);
+  };
+
+  const addQuickReply = () => {
+    const nextReply: QuickReply = {
+      id: `custom-${Date.now()}`,
+      label: t('settings_quick_replies_new_label'),
+      value: t('settings_quick_replies_new_message'),
+    };
+    const next = [...quickReplies, nextReply];
+    setQuickReplies(next);
+    setExpandedQuickReplyId(nextReply.id);
+    saveQuickReplies(lang, next).catch(console.error);
+  };
+
+  const removeQuickReply = (id: string) => {
+    const next = quickReplies.filter(reply => reply.id !== id);
+    setQuickReplies(next);
+    if (expandedQuickReplyId === id) {
+      setExpandedQuickReplyId(next[0]?.id ?? null);
+    }
+    saveQuickReplies(lang, next).catch(console.error);
+  };
+
+  const resetQuickReplies = () => {
+    const defaults = getDefaultQuickReplies(lang);
+    setQuickReplies(defaults);
+    setExpandedQuickReplyId(defaults[0]?.id ?? null);
+    saveQuickReplies(lang, defaults).catch(console.error);
   };
 
   // Load chatbots when user signs in
@@ -247,6 +301,82 @@ export default function SettingsScreen() {
                 )}
               </Pressable>
             ))}
+          </View>
+        </View>
+
+        {/* Quick replies */}
+        <View style={styles.panel}>
+          <ThemedText style={styles.sectionTitle}>{t('settings_section_quick_replies')}</ThemedText>
+          <View style={styles.headerActions}>
+            <Pressable onPress={resetQuickReplies} style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}>
+              <Text style={styles.resetButtonText}>{t('settings_quick_replies_reset')}</Text>
+            </Pressable>
+            <Pressable onPress={addQuickReply} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
+              <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor="#ffffff" />
+              <Text style={styles.addButtonText}>{t('settings_quick_replies_add')}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.divider} />
+          <SettingRow
+            icon={{ ios: 'text.bubble.fill', android: 'quickreply', web: 'quickreply' }}
+            iconBg="#0f6eff"
+            label={t('settings_quick_replies_label')}
+            description={t('settings_quick_replies_desc')}
+            value={quickRepliesEnabled}
+            onValueChange={toggleQuickReplies}
+          />
+          <View style={styles.quickReplyDropdownList}>
+            {quickReplies.map((reply, index) => {
+              const expanded = expandedQuickReplyId === reply.id;
+              return (
+                <View key={reply.id} style={[styles.quickReplyDropdown, expanded && styles.quickReplyDropdownOpen]}>
+                  <Pressable
+                    onPress={() => setExpandedQuickReplyId(expanded ? null : reply.id)}
+                    style={({ pressed }) => [styles.quickReplyDropdownHeader, pressed && styles.pressed]}>
+                    <View style={styles.quickReplyHeaderLeft}>
+                      <Text style={styles.quickReplyNumber}>{index + 1}</Text>
+                      <View style={styles.quickReplyHeaderCopy}>
+                        <Text style={styles.quickReplyTitle} numberOfLines={1}>{reply.label}</Text>
+                        <Text style={styles.quickReplyPreview} numberOfLines={1}>{reply.value}</Text>
+                      </View>
+                    </View>
+                    <SymbolView
+                      name={{ ios: expanded ? 'chevron.up' : 'chevron.down', android: 'expand_more', web: 'expand_more' }}
+                      size={16}
+                      tintColor="#9fb1ce"
+                    />
+                  </Pressable>
+                  {expanded && (
+                    <View style={styles.quickReplyFields}>
+                      <View style={styles.quickReplyEditHeader}>
+                        <Text style={styles.quickReplyEditTitle}>{t('settings_quick_replies_message_label')}</Text>
+                        <Pressable
+                          onPress={() => removeQuickReply(reply.id)}
+                          style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}>
+                          <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} size={13} tintColor="#fca5a5" />
+                          <Text style={styles.removeButtonText}>{t('settings_quick_replies_remove')}</Text>
+                        </Pressable>
+                      </View>
+                      <Text style={styles.inputLabel}>{t('settings_quick_replies_chip_label')}</Text>
+                      <TextInput
+                        value={reply.label}
+                        onChangeText={(value) => updateQuickReply(reply.id, 'label', value)}
+                        placeholderTextColor="#52657f"
+                        style={styles.quickReplyInput}
+                      />
+                      <Text style={styles.inputLabel}>{t('settings_quick_replies_message_label')}</Text>
+                      <TextInput
+                        multiline
+                        value={reply.value}
+                        onChangeText={(value) => updateQuickReply(reply.id, 'value', value)}
+                        placeholderTextColor="#52657f"
+                        style={[styles.quickReplyInput, styles.quickReplyMessageInput]}
+                      />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
         </View>
 
@@ -413,6 +543,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -513,6 +655,154 @@ const styles = StyleSheet.create({
   },
   langOptionTextActive: {
     color: '#ffffff',
+  },
+  resetButton: {
+    minHeight: 34,
+    flexGrow: 1,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  resetButtonText: {
+    color: '#9fb1ce',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  addButton: {
+    minHeight: 34,
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#0f6eff',
+  },
+  addButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  quickReplyDropdownList: {
+    gap: 8,
+  },
+  quickReplyDropdown: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    overflow: 'hidden',
+  },
+  quickReplyDropdownOpen: {
+    backgroundColor: 'rgba(15,110,255,0.055)',
+    borderColor: 'rgba(15,110,255,0.2)',
+  },
+  quickReplyDropdownHeader: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+    padding: 12,
+  },
+  quickReplyHeaderLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quickReplyNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15,110,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.28)',
+    color: '#93c5fd',
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 26,
+    textAlign: 'center',
+  },
+  quickReplyHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  quickReplyTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  quickReplyPreview: {
+    color: '#7d91ae',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  quickReplyFields: {
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  quickReplyEditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+    marginTop: 2,
+  },
+  quickReplyEditTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  removeButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    borderRadius: 9,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.22)',
+  },
+  removeButtonText: {
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  inputLabel: {
+    color: '#9fb1ce',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0,
+  },
+  quickReplyInput: {
+    minHeight: 42,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  quickReplyMessageInput: {
+    minHeight: 76,
+    lineHeight: 20,
+    textAlignVertical: 'top',
   },
   defaultBadge: {
     flexDirection: 'row',

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
@@ -53,6 +54,7 @@ import {
 } from '@/lib/admin-chat';
 import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
+import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
 import { isSuperAdmin, SuperAdminPanel } from '@/components/super-admin-panel';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -337,7 +339,7 @@ function AdminBackground() {
 
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
   const insets = useSafeAreaInsets();
-  const { t: adminT } = useTranslation();
+  const { t: adminT, lang } = useTranslation();
   const [superAdminOpen, setSuperAdminOpen] = useState(false);
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<AdminProfile[]>([]);
@@ -352,9 +354,30 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [quickRepliesEnabled, setQuickRepliesEnabled] = useState(true);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>(() => getDefaultQuickReplies(lang));
   const [fetchedWidgets, setFetchedWidgets] = useState<Widget[]>([]);
   const [selectedWidgetKey, setSelectedWidgetKey] = useState<string>('all');
   const messageListRef = useRef<ScrollView>(null);
+
+  const loadQuickReplySettings = useCallback(() => {
+    let mounted = true;
+    Promise.all([loadQuickRepliesEnabled(), loadQuickReplies(lang)])
+      .then(([enabled, replies]) => {
+        if (!mounted) return;
+        setQuickRepliesEnabled(enabled);
+        setQuickReplies(replies);
+      })
+      .catch(() => {
+        if (mounted) setQuickReplies(getDefaultQuickReplies(lang));
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [lang]);
+
+  useEffect(loadQuickReplySettings, [loadQuickReplySettings]);
+  useFocusEffect(loadQuickReplySettings);
 
   // Fetch named widgets from chatWidgets subcollection whenever the active business changes
   useEffect(() => {
@@ -928,30 +951,26 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   </ScrollView>
 
                   {/* Quick replies */}
-                  <View style={styles.quickBar}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
-                      {[
-                        { label: '👋 Hello', value: 'Hello! How can I help you today?' },
-                        { label: '🔍 Looking', value: 'Let me look into that for you. One moment, please.' },
-                        { label: '✅ Resolved', value: 'I have resolved this. Let me know if there is anything else!' },
-                        { label: '📧 Email?', value: 'Could you provide your email so I can follow up?' },
-                        { label: '🙏 Thanks', value: 'Thank you for reaching out! Have an amazing day.' },
-                      ].map((item, i) => (
-                        <Pressable
-                          key={i}
-                          onPress={() => setReply(item.value)}
-                          style={({ pressed }) => [styles.quickChip, pressed && styles.pressed]}>
-                          <Text style={styles.quickChipText}>{item.label}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
+                  {quickRepliesEnabled && quickReplies.length > 0 && (
+                    <View style={styles.quickBar}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
+                        {quickReplies.map((item) => (
+                          <Pressable
+                            key={item.id}
+                            onPress={() => setReply(item.value)}
+                            style={({ pressed }) => [styles.quickChip, pressed && styles.pressed]}>
+                            <Text style={styles.quickChipText}>{item.label}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
 
                   {/* Input */}
-                  <View style={styles.msgInputBar}>
+                  <View style={[styles.msgInputBar, compact && styles.msgInputBarCompact]}>
                     <TextInput
                       multiline
-                      placeholder="Write a reply..."
+                      placeholder={adminT('admin_reply_placeholder')}
                       placeholderTextColor="#283447"
                       style={styles.msgInput}
                       value={reply}
@@ -3684,6 +3703,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.92)',
+  },
+  msgInputBarCompact: {
+    paddingBottom: 28,
   },
   msgInput: {
     flex: 1,
