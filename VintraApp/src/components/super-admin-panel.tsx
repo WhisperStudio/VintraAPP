@@ -2,6 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,6 +25,7 @@ import {
 } from 'firebase/firestore';
 
 import { firebaseDb } from '@/lib/firebase';
+import { fetchPushTokens, sendExpoPush } from '@/lib/push-sender';
 
 /* ── Constants ─────────────────────────────────────────────── */
 export const SUPER_ADMIN_EMAIL = 'vintrastudio@gmail.com';
@@ -109,21 +111,44 @@ export function SuperAdminPanel({
     setSending(true);
     setSentOk(false);
     try {
+      const tokens = await fetchPushTokens(targetBiz);
+      const result = tokens.length
+        ? await sendExpoPush(tokens, notifTitle.trim(), notifBody.trim())
+        : { total: 0, sent: 0, failed: 0 };
+
+      const status =
+        result.total === 0
+          ? 'no-recipients'
+          : result.failed === 0
+            ? 'sent'
+            : result.sent === 0
+              ? 'failed'
+              : 'partial';
+
       await addDoc(collection(firebaseDb, 'notificationQueue'), {
         title: notifTitle.trim(),
         body: notifBody.trim(),
         targetBusinessId: targetBiz,
-        status: 'pending',
+        status,
+        recipients: result.total,
+        sentCount: result.sent,
+        failedCount: result.failed,
         createdAt: serverTimestamp(),
         createdBy: userEmail,
       });
+
+      if (result.total === 0) {
+        Alert.alert('No recipients', 'No registered devices were found for this target.');
+      }
+
       setSentOk(true);
       setNotifTitle('');
       setNotifBody('');
       setTargetBiz('all');
       setTimeout(() => setSentOk(false), 3000);
     } catch (e) {
-      console.error('super-admin: failed to queue notification', e);
+      console.error('super-admin: failed to send notification', e);
+      Alert.alert('Send failed', e instanceof Error ? e.message : 'Could not send the notification.');
     } finally {
       setSending(false);
     }
@@ -297,9 +322,8 @@ export function SuperAdminPanel({
                 </Pressable>
 
                 <Text style={st.hint}>
-                  Writes to{' '}
-                  <Text style={{ color: '#60a5fa' }}>notificationQueue</Text> — a Cloud Function
-                  will process and dispatch push notifications.
+                  Sends push notifications directly to all registered devices via the{' '}
+                  <Text style={{ color: '#60a5fa' }}>Expo Push API</Text>.
                 </Text>
               </View>
             )}

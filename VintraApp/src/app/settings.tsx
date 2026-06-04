@@ -467,6 +467,7 @@ export default function SettingsScreen() {
           </View>
         ) : null}
       </ScrollView>
+
     </ThemedView>
   );
 }

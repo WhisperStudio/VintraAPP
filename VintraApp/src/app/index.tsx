@@ -59,7 +59,6 @@ import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
 import { registerPushToken, sendLocalNotification } from '@/lib/notifications';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
-import { isSuperAdmin, SuperAdminPanel } from '@/components/super-admin-panel';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
@@ -208,7 +207,6 @@ export function AuthScreen({ compact }: { compact: boolean }) {
             <ThemedText style={styles.brandSubline}>Support console</ThemedText>
           </View>
         </View>
-        <ThemedText style={[styles.authTitle, compact && styles.authTitleCompact]}>Welcome back</ThemedText>
         <View style={styles.authCard}>
           <View style={styles.segment}>
             <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
@@ -330,7 +328,6 @@ function AdminBackground() {
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
   const insets = useSafeAreaInsets();
   const { t: adminT, lang } = useTranslation();
-  const [superAdminOpen, setSuperAdminOpen] = useState(false);
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<AdminProfile[]>([]);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
@@ -716,31 +713,12 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 </View>
               </View>
 
-              {isSuperAdmin(user.email) && (
-                <Pressable
-                  onPress={() => setSuperAdminOpen(true)}
-                  style={({ pressed }) => [styles.superAdminBtn, pressed && styles.pressed]}>
-                  <SymbolView
-                    name={{ ios: 'bolt.fill', android: 'bolt', web: 'bolt' }}
-                    size={14}
-                    tintColor="#f97316"
-                  />
-                </Pressable>
-              )}
               <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.topBarLogoutBtn, pressed && styles.pressed]}>
                 <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={16} tintColor="#475569" />
               </Pressable>
             </View>
             {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
           </>
-        )}
-
-        {isSuperAdmin(user.email) && (
-          <SuperAdminPanel
-            visible={superAdminOpen}
-            onClose={() => setSuperAdminOpen(false)}
-            userEmail={user.email!}
-          />
         )}
 
         {/* ── BUSINESS PICKER ──────────────────────────────── */}

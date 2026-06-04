@@ -11,14 +11,33 @@ type PermissionResult = {
   message: string;
 };
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+let notificationTapHandler: ((data: Record<string, unknown>) => void) | null = null;
+
+/**
+ * Register a callback invoked when the user taps a push notification.
+ * Call this once from your root layout with navigation logic.
+ */
+export function setNotificationTapHandler(handler: (data: Record<string, unknown>) => void) {
+  notificationTapHandler = handler;
+}
+
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch {}
+
+try {
+  Notifications.addNotificationResponseReceivedListener((event) => {
+    const data = event.notification.request.content.data as Record<string, unknown>;
+    notificationTapHandler?.(data);
+  });
+} catch {}
 
 export async function requestNotificationAccess(): Promise<PermissionResult> {
   if (Platform.OS === 'web') {
@@ -40,21 +59,24 @@ export async function requestNotificationAccess(): Promise<PermissionResult> {
     };
   }
 
-  const current = await Notifications.getPermissionsAsync();
-  const finalStatus = current.granted
-    ? current
-    : await Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-        },
-      });
-
-  return {
-    granted: finalStatus.granted,
-    message: finalStatus.granted ? 'Notifications are enabled.' : 'Notifications were not enabled.',
-  };
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    const finalStatus = current.granted
+      ? current
+      : await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+        });
+    return {
+      granted: finalStatus.granted,
+      message: finalStatus.granted ? 'Notifications are enabled.' : 'Notifications were not enabled.',
+    };
+  } catch {
+    return { granted: false, message: 'Notifications are not available on this build.' };
+  }
 }
 
 export async function sendLocalNotification(title: string, body: string, playSound = true) {
@@ -67,14 +89,12 @@ export async function sendLocalNotification(title: string, body: string, playSou
     throw new Error('Browser notifications are not enabled.');
   }
 
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      sound: playSound ? 'default' : undefined,
-    },
-    trigger: null,
-  });
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: playSound ? 'default' : undefined },
+      trigger: null,
+    });
+  } catch {}
 }
 
 export async function registerPushToken(userId: string, businessId: string) {
@@ -88,7 +108,12 @@ export async function registerPushToken(userId: string, businessId: string) {
   }
 
   const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-  const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+  let token: string;
+  try {
+    token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+  } catch {
+    return null;
+  }
 
   const payload = {
     token,

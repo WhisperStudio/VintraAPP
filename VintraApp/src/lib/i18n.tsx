@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Localization from 'expo-localization';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export type Lang = 'en' | 'no';
@@ -208,8 +207,7 @@ const LangContext = createContext<LangCtx>({
 
 function detectDeviceLang(): Lang {
   try {
-    const locales = Localization.getLocales();
-    const locale = locales[0]?.languageTag || locales[0]?.languageCode || Intl.DateTimeFormat().resolvedOptions().locale;
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
     const normalized = locale.toLowerCase();
     if (normalized.startsWith('nb') || normalized.startsWith('nn') || normalized.startsWith('no')) return 'no';
   } catch {}

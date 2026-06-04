@@ -7,7 +7,8 @@ import {
   TabListProps,
 } from 'expo-router/ui';
 import { SymbolView } from 'expo-symbols';
-import React from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import React, { useEffect, useState } from 'react';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
 import { ExternalLink } from './external-link';
@@ -15,8 +16,18 @@ import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { firebaseAuth } from '@/lib/firebase';
 
 export default function AppTabs() {
+  const [user, setUser] = useState<import('firebase/auth').User | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
+    return () => unsub();
+  }, []);
+
+  const isSuperAdmin = user?.email?.toLowerCase() === 'vintrastudio@gmail.com';
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -31,6 +42,11 @@ export default function AppTabs() {
           <TabTrigger name="owner" href="/owner" asChild>
             <TabButton>Owner</TabButton>
           </TabTrigger>
+          {isSuperAdmin && (
+            <TabTrigger name="notifications" href="/notifications" asChild>
+              <TabButton>Notifications</TabButton>
+            </TabTrigger>
+          )}
         </CustomTabList>
       </TabList>
     </Tabs>
