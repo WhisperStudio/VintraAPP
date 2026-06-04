@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import * as Localization from 'expo-localization';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export type Lang = 'en' | 'no';
 export type RawLang = 'auto' | Lang;
@@ -207,16 +208,22 @@ const LangContext = createContext<LangCtx>({
 
 function detectDeviceLang(): Lang {
   try {
-    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-    if (locale.startsWith('nb') || locale.startsWith('nn') || locale.startsWith('no')) return 'no';
+    const locales = Localization.getLocales();
+    const locale = locales[0]?.languageTag || locales[0]?.languageCode || Intl.DateTimeFormat().resolvedOptions().locale;
+    const normalized = locale.toLowerCase();
+    if (normalized.startsWith('nb') || normalized.startsWith('nn') || normalized.startsWith('no')) return 'no';
   } catch {}
   return 'en';
 }
 
 /* ── Provider ──────────────────────────────────────────────────────── */
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const deviceLang = useMemo(detectDeviceLang, []);
+  const [deviceLang, setDeviceLang] = useState<Lang>(() => detectDeviceLang());
   const [savedLang, setSavedLangState] = useState<RawLang>('auto');
+
+  useEffect(() => {
+    setDeviceLang(detectDeviceLang());
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)

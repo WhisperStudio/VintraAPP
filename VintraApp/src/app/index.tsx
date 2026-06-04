@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,6 +16,7 @@ import {
   Text,
   TextInput,
   useWindowDimensions,
+  Vibration,
   View,
 } from 'react-native';
 import Animated, {
@@ -54,19 +57,20 @@ import {
 } from '@/lib/admin-chat';
 import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
+import { registerPushToken, sendLocalNotification } from '@/lib/notifications';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
 import { isSuperAdmin, SuperAdminPanel } from '@/components/super-admin-panel';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
 
-function VintraMark({ light = false }: { light?: boolean }) {
+function VintraMark() {
   return (
-    <View style={styles.logoMark}>
-      <View style={[styles.logoBladeLeft, light && styles.logoBladeLight]} />
-      <View style={[styles.logoBladeRight, light && styles.logoBladeSoft]} />
-      <View style={[styles.logoDot, light && styles.logoDotLight]} />
-    </View>
+    <Image
+      source={require('@/images/logo.png')}
+      style={styles.logoMark}
+      contentFit="contain"
+    />
   );
 }
 
@@ -196,86 +200,72 @@ export function AuthScreen({ compact }: { compact: boolean }) {
 
   return (
     <View style={[styles.authLayout, compact && styles.authLayoutCompact]}>
-      <View style={styles.authIntro}>
+      <View style={styles.authFormGroup}>
         <View style={styles.brand}>
-          <VintraMark light />
+          <VintraMark />
           <View>
             <ThemedText style={styles.brandName}>VINTRA</ThemedText>
-            <ThemedText style={styles.brandSubline}>Nordic digital studio</ThemedText>
+            <ThemedText style={styles.brandSubline}>Support console</ThemedText>
           </View>
         </View>
-        <ThemedText style={[styles.authTitle, compact && styles.authTitleCompact]}>Sign In</ThemedText>
-        <ThemedText style={styles.authLead}>
-          Respond to inquiries from your Vintra widget. Log in to view messages and assist visitors in real-time.
-        </ThemedText>
-        <View style={styles.featureGrid}>
-          {['Live chat', 'Support', 'Vintra'].map((item) => (
-            <View key={item} style={styles.featurePill}>
-              <ThemedText style={styles.featureText}>{item}</ThemedText>
-            </View>
-          ))}
-        </View>
-      </View>
+        <ThemedText style={[styles.authTitle, compact && styles.authTitleCompact]}>Welcome back</ThemedText>
+        <View style={styles.authCard}>
+          <View style={styles.segment}>
+            <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
+              <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>Sign In</ThemedText>
+            </Pressable>
+            <Pressable onPress={() => setMode('register')} style={[styles.segmentButton, isRegister && styles.segmentActive]}>
+              <ThemedText style={[styles.segmentText, isRegister && styles.segmentTextActive]}>Register</ThemedText>
+            </Pressable>
+          </View>
 
-      <View style={styles.authCard}>
-        <View style={styles.segment}>
-          <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
-            <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>Sign In</ThemedText>
-          </Pressable>
-          <Pressable onPress={() => setMode('register')} style={[styles.segmentButton, isRegister && styles.segmentActive]}>
-            <ThemedText style={[styles.segmentText, isRegister && styles.segmentTextActive]}>Register</ThemedText>
-          </Pressable>
-        </View>
+          <ThemedText style={styles.formTitle}>{isRegister ? 'Create Account' : 'Sign In'}</ThemedText>
 
-        <ThemedText style={styles.formTitle}>{isRegister ? 'Create Account' : 'Sign In'}</ThemedText>
-        <ThemedText style={styles.formLead}>
-          {isRegister ? 'Create an account to respond to inquiries.' : 'Enter your email and password to continue.'}
-        </ThemedText>
-
-        <View style={styles.form}>
-          {isRegister && (
+          <View style={styles.form}>
+            {isRegister && (
+              <AuthField
+                icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
+                autoComplete="name"
+                placeholder="Full name"
+                returnKeyType="next"
+                value={name}
+                onChangeText={setName}
+              />
+            )}
             <AuthField
-              icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
-              autoComplete="name"
-              placeholder="Full name"
+              icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
+              autoComplete="email"
+              placeholder="Email"
               returnKeyType="next"
-              value={name}
-              onChangeText={setName}
+              value={email}
+              onChangeText={setEmail}
             />
-          )}
-          <AuthField
-            icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
-            autoComplete="email"
-            placeholder="Email"
-            returnKeyType="next"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <AuthField
-            icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
-            autoComplete="password"
-            placeholder="Password"
-            returnKeyType="done"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            onSubmitEditing={submit}
-          />
-        </View>
+            <AuthField
+              icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
+              autoComplete="password"
+              placeholder="Password"
+              returnKeyType="done"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={submit}
+            />
+          </View>
 
-        <Pressable
-          onPress={submit}
-          disabled={busy}
-          style={({ pressed }) => [styles.submitButton, busy && styles.submitButtonBusy, pressed && styles.pressed]}>
-          {busy ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <>
-              <Text style={styles.submitText}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
-              <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={19} tintColor="#ffffff" />
-            </>
-          )}
-        </Pressable>
+          <Pressable
+            onPress={submit}
+            disabled={busy}
+            style={({ pressed }) => [styles.submitButton, busy && styles.submitButtonBusy, pressed && styles.pressed]}>
+            {busy ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Text style={styles.submitText}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
+                <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={19} tintColor="#ffffff" />
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -359,6 +349,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [fetchedWidgets, setFetchedWidgets] = useState<Widget[]>([]);
   const [selectedWidgetKey, setSelectedWidgetKey] = useState<string>('all');
   const messageListRef = useRef<ScrollView>(null);
+  const knownLatestMessageIds = useRef<Record<string, string>>({});
+  const chatNotificationsReady = useRef(false);
 
   const loadQuickReplySettings = useCallback(() => {
     let mounted = true;
@@ -437,6 +429,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     }
   }, [openChat?.id, openChat?.messages.length]);
 
+  useEffect(() => {
+    const eventName = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(eventName, () => {
+      setTimeout(() => messageListRef.current?.scrollToEnd({ animated: true }), 120);
+    });
+
+    return () => sub.remove();
+  }, []);
+
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
     if (compact) {
@@ -477,17 +478,69 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     };
   }, [user]);
 
+  const notifyNewChatMessage = useCallback(async (chat: SupportChat, message: SupportMessage) => {
+    const [notificationsSetting, soundSetting, vibrationSetting] = await Promise.all([
+      AsyncStorage.getItem('@vintra_settings_notif').catch(() => null),
+      AsyncStorage.getItem('@vintra_settings_sound').catch(() => null),
+      AsyncStorage.getItem('@vintra_settings_vib').catch(() => null),
+    ]);
+
+    const notificationsEnabled = notificationsSetting === null ? true : notificationsSetting === 'true';
+    const soundEnabled = soundSetting === null ? true : soundSetting === 'true';
+    const vibrationEnabled = vibrationSetting === null ? true : vibrationSetting === 'true';
+
+    if (vibrationEnabled && Platform.OS !== 'web') {
+      Vibration.vibrate([0, 250, 120, 250]);
+    }
+
+    if (!notificationsEnabled) {
+      return;
+    }
+
+    const title = chat.visitorName || chat.pageTitle || 'New customer message';
+    const body = message.text || chat.preview || 'A customer sent a new message.';
+    await sendLocalNotification(title, body, soundEnabled);
+  }, []);
+
   useEffect(() => {
     if (!adminProfile) {
       return undefined;
     }
 
+    AsyncStorage.getItem('@vintra_settings_notif')
+      .then((setting) => {
+        const enabled = setting === null ? true : setting === 'true';
+        if (enabled) {
+          registerPushToken(user.uid, adminProfile.businessId).catch(() => {});
+        }
+      })
+      .catch(() => {});
+
+    knownLatestMessageIds.current = {};
+    chatNotificationsReady.current = false;
     setChatsLoading(true);
     setAccessError('');
 
     return listenSupportChats(
       adminProfile.businessId,
       (nextChats) => {
+        const previousLatest = knownLatestMessageIds.current;
+        const nextLatest: Record<string, string> = {};
+
+        nextChats.forEach((chat) => {
+          const latestMessage = chat.messages.at(-1);
+          if (!latestMessage) return;
+
+          nextLatest[chat.id] = latestMessage.id;
+
+          const isNewLatest = previousLatest[chat.id] !== latestMessage.id;
+          if (chatNotificationsReady.current && isNewLatest && latestMessage.role === 'user') {
+            notifyNewChatMessage(chat, latestMessage).catch(() => {});
+          }
+        });
+
+        knownLatestMessageIds.current = nextLatest;
+        chatNotificationsReady.current = true;
         setChats(nextChats);
         setChatsLoading(false);
         setSelectedChatId((current) => current || nextChats[0]?.id || null);
@@ -497,7 +550,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         setChatsLoading(false);
       },
     );
-  }, [adminProfile]);
+  }, [adminProfile, notifyNewChatMessage, user.uid]);
 
   useEffect(() => {
     if (!adminProfile || !selectedChatId) {
@@ -906,24 +959,55 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
                   {/* Action toolbar */}
                   <View style={styles.chatToolbar}>
-                    <Pressable
-                      disabled={sending}
-                      onPress={() => handleStatusChange('open')}
-                      style={({ pressed }) => [styles.toolBtn, openChat.status === 'open' && styles.toolBtnBlue, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                      <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={13} tintColor={openChat.status === 'open' ? '#0f6eff' : '#475569'} />
-                      <Text style={[styles.toolBtnText, openChat.status === 'open' && styles.toolBtnTextBlue]}>
-                        {compact ? 'Take' : 'Assign to me'}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      disabled={sending}
-                      onPress={() => handleStatusChange('ai-active')}
-                      style={({ pressed }) => [styles.toolBtn, openChat.status === 'ai-active' && styles.toolBtnPurple, sending && styles.buttonDisabled, pressed && styles.pressed]}>
-                      <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={13} tintColor={openChat.status === 'ai-active' ? '#a78bfa' : '#475569'} />
-                      <Text style={[styles.toolBtnText, openChat.status === 'ai-active' && styles.toolBtnTextPurple]}>
-                        {compact ? 'AI' : 'AI Mode'}
-                      </Text>
-                    </Pressable>
+                    <View style={styles.handoffControl}>
+                      <Pressable
+                        disabled={sending}
+                        onPress={() => handleStatusChange('open')}
+                        style={({ pressed }) => [
+                          styles.handoffButton,
+                          openChat.status === 'open' && styles.handoffButtonHumanActive,
+                          openChat.status === 'needs-human' && styles.handoffButtonWaiting,
+                          sending && styles.buttonDisabled,
+                          pressed && styles.pressed,
+                        ]}>
+                        <View style={styles.handoffButtonTop}>
+                          <SymbolView
+                            name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }}
+                            size={14}
+                            tintColor={openChat.status === 'open' ? '#ffffff' : openChat.status === 'needs-human' ? '#fca5a5' : '#64748b'}
+                          />
+                          <Text style={[styles.handoffTitle, openChat.status === 'open' && styles.handoffTitleActive, openChat.status === 'needs-human' && styles.handoffTitleWaiting]}>
+                            {compact ? 'Human' : 'Take over'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.handoffSub, openChat.status === 'open' && styles.handoffSubActive, openChat.status === 'needs-human' && styles.handoffSubWaiting]} numberOfLines={1}>
+                          {openChat.status === 'open' ? 'You are handling' : openChat.status === 'needs-human' ? 'Needs reply' : 'Assign to you'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={sending}
+                        onPress={() => handleStatusChange('ai-active')}
+                        style={({ pressed }) => [
+                          styles.handoffButton,
+                          openChat.status === 'ai-active' && styles.handoffButtonAiActive,
+                          sending && styles.buttonDisabled,
+                          pressed && styles.pressed,
+                        ]}>
+                        <View style={styles.handoffButtonTop}>
+                          <SymbolView
+                            name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                            size={14}
+                            tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#64748b'}
+                          />
+                          <Text style={[styles.handoffTitle, openChat.status === 'ai-active' && styles.handoffTitleActive]}>
+                            {compact ? 'AI' : 'Give to AI'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.handoffSub, openChat.status === 'ai-active' && styles.handoffSubActive]} numberOfLines={1}>
+                          {openChat.status === 'ai-active' ? 'AI is handling' : 'Let AI answer'}
+                        </Text>
+                      </Pressable>
+                    </View>
                     <View style={styles.toolBtnSpacer} />
                     <Pressable
                       disabled={sending}
@@ -939,6 +1023,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     ref={messageListRef}
                     style={styles.msgScroll}
                     contentContainerStyle={styles.msgScrollContent}
+                    keyboardDismissMode="interactive"
+                    keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                     onContentSizeChange={() => messageListRef.current?.scrollToEnd({ animated: false })}>
                     {chatLoading ? (
@@ -970,6 +1056,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   <View style={[styles.msgInputBar, compact && styles.msgInputBarCompact]}>
                     <TextInput
                       multiline
+                      scrollEnabled
                       placeholder={adminT('admin_reply_placeholder')}
                       placeholderTextColor="#283447"
                       style={styles.msgInput}
@@ -1183,7 +1270,10 @@ export default function HomeScreen() {
           onRequestClose={() => setChatOpen(false)}>
           <ThemedView style={styles.container}>
             <AnimatedBackdrop />
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={0}
+              style={styles.keyboardView}>
               <AdminScreen
                 user={user}
                 compact={compact}
@@ -1266,28 +1356,28 @@ const styles = StyleSheet.create({
   },
   authLayout: {
     flex: 1,
-    minHeight: 650,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.five,
-  },
-  authLayoutCompact: {
     minHeight: 0,
     flexDirection: 'column',
-    alignItems: 'stretch',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.four,
   },
-  authIntro: {
-    flex: 1,
-    maxWidth: 560,
+  authLayoutCompact: {
+    minHeight: undefined,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authFormGroup: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    gap: 10,
   },
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: Spacing.four,
+    gap: 10,
+    marginBottom: 2,
   },
   brandDark: {
     flexDirection: 'row',
@@ -1295,53 +1385,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   logoMark: {
-    width: 38,
-    height: 32,
-  },
-  logoBladeLeft: {
-    position: 'absolute',
-    left: 1,
-    top: 1,
-    width: 14,
-    height: 31,
-    borderRadius: 8,
-    backgroundColor: '#0f6eff',
-    transform: [{ rotateZ: '-28deg' }],
-  },
-  logoBladeRight: {
-    position: 'absolute',
-    left: 16,
-    top: 0,
-    width: 14,
-    height: 31,
-    borderRadius: 8,
-    backgroundColor: '#1b204c',
-    transform: [{ rotateZ: '29deg' }],
-  },
-  logoDot: {
-    position: 'absolute',
-    right: 0,
-    top: 3,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: '#0f6eff',
-  },
-  logoBladeLight: {
-    backgroundColor: '#ffffff',
-  },
-  logoBladeSoft: {
-    backgroundColor: '#0f6eff',
-  },
-  logoDotLight: {
-    backgroundColor: '#ffffff',
+    width: 58,
+    height: 46,
   },
   brandName: {
     color: '#ffffff',
-    fontSize: 17,
-    lineHeight: 19,
+    fontSize: 16,
+    lineHeight: 18,
     fontWeight: '900',
-    letterSpacing: 4,
+    letterSpacing: 0,
   },
   brandNameDark: {
     color: '#ffffff',
@@ -1352,12 +1404,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   brandSubline: {
-    color: '#0f6eff',
-    fontSize: 10,
+    color: '#94a3b8',
+    fontSize: 12,
     lineHeight: 14,
-    fontWeight: '900',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
+    fontWeight: '700',
+    letterSpacing: 0,
   },
   brandSublineDark: {
     color: '#94a3b8',
@@ -1368,76 +1419,41 @@ const styles = StyleSheet.create({
   },
   authTitle: {
     color: '#ffffff',
-    fontSize: 60,
-    lineHeight: 64,
+    fontSize: 32,
+    lineHeight: 37,
     fontWeight: '900',
+    textAlign: 'center',
   },
   authTitleCompact: {
-    fontSize: 42,
-    lineHeight: 46,
-  },
-  authLead: {
-    color: '#c3cee0',
-    fontSize: 18,
-    lineHeight: 29,
-    fontWeight: '700',
-    marginTop: Spacing.three,
-  },
-  featureGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-    marginTop: Spacing.four,
-  },
-  featurePill: {
-    minHeight: 40,
-    borderRadius: 20,
-    paddingHorizontal: Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#0f6eff',
-  },
-  featureText: {
-    color: '#edf4ff',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '900',
+    fontSize: 29,
+    lineHeight: 34,
   },
   authCard: {
     width: '100%',
-    maxWidth: 430,
-    borderRadius: 32,
-    padding: Spacing.four,
-    backgroundColor: '#110d3d',
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 20,
+    backgroundColor: 'rgba(9,18,32,0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.07)',
     shadowColor: '#000000',
     shadowOpacity: 0.25,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
   },
   segment: {
-    height: 52,
-    padding: 5,
-    borderRadius: 26,
+    height: 46,
+    padding: 4,
+    borderRadius: 12,
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.05)',
-    marginBottom: Spacing.four,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.05)',
   },
   segmentButton: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1445,8 +1461,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f6eff',
     shadowColor: '#0f6eff',
     shadowOpacity: 0.35,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
   },
   segmentText: {
     color: '#94a3b8',
@@ -1461,24 +1477,25 @@ const styles = StyleSheet.create({
   },
   formTitle: {
     color: '#ffffff',
-    fontSize: 29,
-    lineHeight: 34,
+    fontSize: 24,
+    lineHeight: 29,
     fontWeight: '900',
+    textAlign: 'center',
   },
   formLead: {
     color: '#94a3b8',
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '700',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
     marginTop: 6,
   },
   form: {
-    gap: 12,
-    marginTop: Spacing.four,
+    gap: 10,
+    marginTop: 14,
   },
   inputShell: {
-    minHeight: 58,
-    borderRadius: 18,
+    minHeight: 52,
+    borderRadius: 12,
     paddingHorizontal: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1489,15 +1506,15 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 50,
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
   submitButton: {
-    minHeight: 58,
-    borderRadius: 16,
-    marginTop: Spacing.four,
+    minHeight: 52,
+    borderRadius: 12,
+    marginTop: 16,
     paddingHorizontal: Spacing.five,
     flexDirection: 'row',
     alignItems: 'center',
@@ -3527,6 +3544,73 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.04)',
     backgroundColor: 'rgba(20,30,46,0.7)',
   },
+  handoffControl: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 0,
+  },
+  handoffButton: {
+    flex: 1,
+    minHeight: 48,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  handoffButtonHumanActive: {
+    backgroundColor: '#0f6eff',
+    borderColor: '#63a5ff',
+    shadowColor: '#0f6eff',
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  handoffButtonAiActive: {
+    backgroundColor: '#7c3aed',
+    borderColor: '#c4b5fd',
+    shadowColor: '#8b5cf6',
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  handoffButtonWaiting: {
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderColor: 'rgba(239,68,68,0.32)',
+  },
+  handoffButtonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  handoffTitle: {
+    flexShrink: 1,
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  handoffTitleActive: {
+    color: '#ffffff',
+  },
+  handoffTitleWaiting: {
+    color: '#fca5a5',
+  },
+  handoffSub: {
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  handoffSubActive: {
+    color: 'rgba(255,255,255,0.78)',
+  },
+  handoffSubWaiting: {
+    color: 'rgba(252,165,165,0.75)',
+  },
   toolBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3558,7 +3642,7 @@ const styles = StyleSheet.create({
     color: '#a78bfa',
   },
   toolBtnSpacer: {
-    flex: 1,
+    width: 2,
   },
   toolBtnResolve: {
     flexDirection: 'row',
@@ -3584,7 +3668,7 @@ const styles = StyleSheet.create({
   msgScrollContent: {
     padding: 14,
     gap: 8,
-    paddingBottom: 20,
+    paddingBottom: 32,
   },
   msgLoading: {
     flex: 1,
@@ -3705,12 +3789,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20,30,46,0.92)',
   },
   msgInputBarCompact: {
-    paddingBottom: 28,
+    paddingBottom: 12,
   },
   msgInput: {
     flex: 1,
     minHeight: 40,
-    maxHeight: 100,
+    maxHeight: 92,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 14,

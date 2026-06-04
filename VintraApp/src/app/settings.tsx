@@ -18,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTranslation, type RawLang } from '@/lib/i18n';
 import { resolveAllAdminProfiles, fetchWidgets, type AdminProfile, type Widget } from '@/lib/admin-chat';
+import { requestNotificationAccess } from '@/lib/notifications';
 import {
   getDefaultQuickReplies,
   loadQuickReplies,
@@ -121,6 +122,18 @@ export default function SettingsScreen() {
   }, [lang]);
 
   const toggleNotifications = async (val: boolean) => {
+    if (val) {
+      const result = await requestNotificationAccess().catch((error: unknown) => ({
+        granted: false,
+        message: error instanceof Error ? error.message : 'Could not enable notifications.',
+      }));
+      if (!result.granted) {
+        Alert.alert(t('settings_notif_label'), result.message);
+        setNotificationsEnabled(false);
+        AsyncStorage.setItem('@vintra_settings_notif', 'false').catch(console.error);
+        return;
+      }
+    }
     setNotificationsEnabled(val);
     AsyncStorage.setItem('@vintra_settings_notif', String(val)).catch(console.error);
   };

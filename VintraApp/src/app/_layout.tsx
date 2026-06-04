@@ -54,18 +54,20 @@ export default function RootLayout() {
         <AppTabs />
       ) : (
         <View style={{ flex: 1, backgroundColor: '#06111f' }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'center',
-              padding: 24,
-              paddingTop: Math.max(insets.top + 20, 48), // Force layout further down from status bar/notch
-              paddingBottom: 120
-            }}>
-            <AuthScreen compact={compact} />
-          </ScrollView>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{
+                flexGrow: 1,
+                justifyContent: 'center',
+                padding: 20,
+                paddingTop: Math.max(insets.top + 16, 34),
+                paddingBottom: Math.max(insets.bottom + 72, 92),
+              }}>
+              <AuthScreen compact={compact} />
+            </ScrollView>
+          </KeyboardAvoidingView>
           <VintraChatWidget />
         </View>
       )}
