@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { AppState, Modal, NativeModules, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image } from 'expo-image';
+import { Modal, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -36,7 +37,6 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
   const logoScale = useSharedValue(0.35);
   const glowOpacity = useSharedValue(0);
   const glowScale = useSharedValue(0.6);
-  const taglineOpacity = useSharedValue(0);
   const overlayOpacity = useSharedValue(1);
   const overlayTranslateY = useSharedValue(0);
 
@@ -52,8 +52,6 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
       ), -1, true,
     ));
 
-    taglineOpacity.value = withDelay(1150, withTiming(1, { duration: 500 }));
-
     const hide = setTimeout(() => {
       overlayOpacity.value = withTiming(0, { duration: 480, easing: Easing.in(Easing.cubic) }, (done) => {
         if (done) runOnJS(onDone)();
@@ -62,7 +60,7 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
     }, 2550);
 
     return () => clearTimeout(hide);
-  }, [glowOpacity, glowScale, logoOpacity, logoScale, onDone, overlayOpacity, overlayTranslateY, taglineOpacity]);
+  }, [glowOpacity, glowScale, logoOpacity, logoScale, onDone, overlayOpacity, overlayTranslateY]);
 
   const overlayStyle = useAnimatedStyle(() => ({
     opacity: overlayOpacity.value,
@@ -76,7 +74,6 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
     opacity: glowOpacity.value,
     transform: [{ scale: glowScale.value }],
   }));
-  const taglineStyle = useAnimatedStyle(() => ({ opacity: taglineOpacity.value }));
 
   return (
     <Animated.View style={[styles.overlay, overlayStyle]}>
@@ -84,11 +81,7 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
 
       <Animated.View style={[styles.logoWrap, logoStyle]}>
         <View style={styles.logoBackground}>
-          <View style={styles.logoMark}>
-            <View style={styles.logoBladeLeft} />
-            <View style={styles.logoBladeRight} />
-            <View style={styles.logoDot} />
-          </View>
+          <Image source={require('@/images/logo.png')} style={styles.logoImage} contentFit="contain" />
         </View>
       </Animated.View>
 
@@ -98,32 +91,16 @@ function SplashAnimation({ onDone }: { onDone: () => void }) {
         ))}
       </View>
 
-      <Animated.Text style={[styles.tagline, taglineStyle]}>
-        AI-drevet kundesupport
-      </Animated.Text>
     </Animated.View>
   );
 }
 
 export function AnimatedSplashOverlay() {
-  const [splashKey, setSplashKey] = useState(0);
   const [visible, setVisible] = useState(true);
-  const appState = useRef(AppState.currentState);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (appState.current.match(/inactive|background/) && next === 'active') {
-        setVisible(true);
-        setSplashKey((k) => k + 1);
-      }
-      appState.current = next;
-    });
-    return () => sub.remove();
-  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <SplashAnimation key={splashKey} onDone={() => setVisible(false)} />
+      <SplashAnimation onDone={() => setVisible(false)} />
     </Modal>
   );
 }
@@ -132,11 +109,7 @@ export function AnimatedIcon() {
   return (
     <View style={styles.iconContainer}>
       <View style={styles.iconBackground}>
-        <View style={styles.logoMark}>
-          <View style={styles.logoBladeLeft} />
-          <View style={styles.logoBladeRight} />
-          <View style={styles.logoDot} />
-        </View>
+        <Image source={require('@/images/logo.png')} style={styles.logoImage} contentFit="contain" />
       </View>
     </View>
   );
@@ -163,50 +136,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoBackground: {
-    width: 96,
-    height: 96,
-    borderRadius: 28,
-    backgroundColor: '#03a84e',
+    width: 170,
+    height: 132,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#03a84e',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 28,
-    elevation: 12,
   },
-  logoMark: {
-    width: 52,
-    height: 44,
-  },
-  logoBladeLeft: {
-    position: 'absolute',
-    left: 3,
-    top: 2,
-    width: 18,
-    height: 40,
-    borderRadius: 9,
-    backgroundColor: '#ffffff',
-    transform: [{ rotateZ: '-29deg' }],
-  },
-  logoBladeRight: {
-    position: 'absolute',
-    left: 23,
-    top: 2,
-    width: 18,
-    height: 40,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    transform: [{ rotateZ: '29deg' }],
-  },
-  logoDot: {
-    position: 'absolute',
-    right: 0,
-    top: 4,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    backgroundColor: '#ffffff',
+  logoImage: {
+    width: 164,
+    height: 126,
   },
   brandRow: {
     flexDirection: 'row',
@@ -220,14 +158,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 6,
   },
-  tagline: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
   iconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -237,8 +167,7 @@ const styles = StyleSheet.create({
   iconBackground: {
     width: 96,
     height: 96,
-    borderRadius: 28,
-    backgroundColor: '#03a84e',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },

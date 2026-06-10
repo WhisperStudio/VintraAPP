@@ -11,6 +11,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   type FirestoreError,
@@ -73,6 +74,33 @@ export type SupportChat = {
 };
 
 const ADMIN_ROLES = new Set(['admin', 'owner', 'support']);
+
+function normalizeEmail(email?: string | null) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function normalizePhone(phone?: string | null) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 8) return `47${digits}`;
+  if (digits.startsWith('00')) return digits.slice(2);
+  return digits;
+}
+
+function invitationMatchesUser(invite: Record<string, unknown>, email: string, phone: string) {
+  const inviteEmail = normalizeEmail(String(invite.email || invite.normalizedEmail || ''));
+  const invitePhones = [
+    invite.phone,
+    invite.telephone,
+    invite.phoneNumber,
+    invite.normalizedPhone,
+  ].map((value) => normalizePhone(String(value || ''))).filter(Boolean);
+
+  return Boolean(
+    (email && inviteEmail === email) ||
+    (phone && invitePhones.includes(phone))
+  );
+}
 
 function randomId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -231,6 +259,99 @@ export async function resolveAllAdminProfiles(user: User): Promise<AdminProfile[
   } catch { /* ignore */ }
 
   return results;
+}
+
+export async function ensureVerifiedPendingUser(user: User, phone?: string) {
+  const email = normalizeEmail(user.email);
+  const savedPhone = phone || user.phoneNumber || '';
+  const savedNormalizedPhone = normalizePhone(savedPhone);
+  const phonePayload = savedPhone || savedNormalizedPhone
+    ? { phone: savedPhone, normalizedPhone: savedNormalizedPhone }
+    : {};
+
+  if (user.emailVerified) {
+    const pendingUserRef = doc(firebaseDb, 'pending_users', user.uid);
+    await setDoc(pendingUserRef, {
+      email,
+      normalizedEmail: email,
+      displayName: user.displayName || '',
+      ...phonePayload,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true }).catch(() => {});
+  }
+
+  await setDoc(doc(firebaseDb, 'pending_auth', user.uid), {
+    email,
+    normalizedEmail: email,
+    displayName: user.displayName || '',
+    ...phonePayload,
+    status: user.emailVerified ? 'email-verified' : 'pending-email',
+    updatedAt: serverTimestamp(),
+  }, { merge: true }).catch(() => {});
+}
+
+export async function acceptPendingInvitationsForUser(user: User, phone?: string): Promise<number> {
+  const email = normalizeEmail(user.email);
+  let accepted = 0;
+
+  const pendingUserSnap = await getDoc(doc(firebaseDb, 'pending_users', user.uid)).catch(() => null);
+  const pendingAuthSnap = await getDoc(doc(firebaseDb, 'pending_auth', user.uid)).catch(() => null);
+  const pendingPhone = String(pendingUserSnap?.data()?.phone || pendingAuthSnap?.data()?.phone || '');
+  const normalizedPhone = normalizePhone(phone || user.phoneNumber || pendingPhone);
+
+  if (!email && !normalizedPhone) {
+    return 0;
+  }
+
+  const isVerified = Boolean(user.emailVerified || pendingUserSnap?.exists() || pendingAuthSnap?.data()?.status === 'email-verified');
+
+  if (!isVerified) {
+    return 0;
+  }
+
+  await ensureVerifiedPendingUser(user, phone || pendingPhone);
+
+  const businessesSnap = await getDocs(collection(firebaseDb, 'businesses'));
+  for (const businessDoc of businessesSnap.docs) {
+    const invitesSnap = await getDocs(
+      query(collection(firebaseDb, `businesses/${businessDoc.id}/invitations`), where('status', '==', 'pending')),
+    ).catch(() => null);
+
+    if (!invitesSnap) continue;
+
+    for (const inviteDoc of invitesSnap.docs) {
+      const invite = inviteDoc.data() as Record<string, unknown>;
+      if (!invitationMatchesUser(invite, email, normalizedPhone)) continue;
+
+      const role = String(invite.role || 'support');
+      await setDoc(doc(firebaseDb, `businesses/${businessDoc.id}/users/${user.uid}`), {
+        email,
+        normalizedEmail: email,
+        phone: phone || user.phoneNumber || pendingPhone || '',
+        normalizedPhone,
+        displayName: user.displayName || '',
+        role: ADMIN_ROLES.has(role) ? role : 'support',
+        status: 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      await updateDoc(inviteDoc.ref, {
+        status: 'accepted',
+        usedAt: serverTimestamp(),
+        usedBy: user.uid,
+      }).catch(() => {});
+
+      accepted += 1;
+    }
+  }
+
+  if (accepted > 0) {
+    await deleteDoc(doc(firebaseDb, 'pending_users', user.uid)).catch(() => {});
+  }
+
+  return accepted;
 }
 
 export async function resolveAdminProfile(user: User): Promise<AdminProfile | null> {

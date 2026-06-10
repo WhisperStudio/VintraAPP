@@ -24,13 +24,26 @@ export function setNotificationTapHandler(handler: (data: Record<string, unknown
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldPlaySound: true,
+      shouldPlaySound: false,
       shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
+      shouldShowBanner: false,
+      shouldShowList: false,
     }),
   });
 } catch {}
+
+async function configureNotificationChannel() {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  await Notifications.setNotificationChannelAsync('support-messages', {
+    name: 'Support messages',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'default',
+    vibrationPattern: [0, 250, 120, 250],
+  });
+}
 
 try {
   Notifications.addNotificationResponseReceivedListener((event) => {
@@ -60,6 +73,8 @@ export async function requestNotificationAccess(): Promise<PermissionResult> {
   }
 
   try {
+    await configureNotificationChannel();
+
     const current = await Notifications.getPermissionsAsync();
     const finalStatus = current.granted
       ? current
@@ -92,7 +107,7 @@ export async function sendLocalNotification(title: string, body: string, playSou
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, sound: playSound ? 'default' : undefined },
-      trigger: null,
+      trigger: Platform.OS === 'android' ? { channelId: 'support-messages' } : null,
     });
   } catch {}
 }

@@ -6,6 +6,7 @@ import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -33,6 +34,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  reload,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -44,6 +47,8 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import {
   fetchWidgets,
+  acceptPendingInvitationsForUser,
+  ensureVerifiedPendingUser,
   listenSupportChat,
   closeSupportChat,
   listenSupportChats,
@@ -129,6 +134,7 @@ function AuthField({
   placeholder,
   secureTextEntry,
   autoComplete,
+  keyboardType,
   returnKeyType,
   onSubmitEditing,
 }: {
@@ -138,6 +144,7 @@ function AuthField({
   placeholder: string;
   secureTextEntry?: boolean;
   autoComplete?: 'email' | 'password' | 'name';
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
   returnKeyType?: 'next' | 'done' | 'send';
   onSubmitEditing?: () => void;
 }) {
@@ -147,6 +154,7 @@ function AuthField({
       <TextInput
         autoCapitalize="none"
         autoComplete={autoComplete}
+        keyboardType={keyboardType || 'default'}
         placeholder={placeholder}
         placeholderTextColor="#8a98ad"
         returnKeyType={returnKeyType}
@@ -164,6 +172,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -185,8 +194,20 @@ export function AuthScreen({ compact }: { compact: boolean }) {
       if (isRegister) {
         const credentials = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
         await updateProfile(credentials.user, { displayName: name.trim() });
+        await ensureVerifiedPendingUser(credentials.user, phone.trim());
+        await sendEmailVerification(credentials.user).catch(() => {});
+        await acceptPendingInvitationsForUser(credentials.user, phone.trim()).catch(() => 0);
+        Alert.alert(
+          'Verify your email',
+          'We sent a verification email. After verifying, sign in again and the app will connect matching invitations by email or phone.',
+        );
       } else {
-        await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        const credentials = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        await reload(credentials.user).catch(() => {});
+        const accepted = await acceptPendingInvitationsForUser(credentials.user).catch(() => 0);
+        if (accepted > 0) {
+          Alert.alert('Access activated', 'Your invitation was verified and connected to this account.');
+        }
       }
       await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
     } catch (error) {
@@ -233,11 +254,22 @@ export function AuthScreen({ compact }: { compact: boolean }) {
             <AuthField
               icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
               autoComplete="email"
+              keyboardType="email-address"
               placeholder="Email"
               returnKeyType="next"
               value={email}
               onChangeText={setEmail}
             />
+            {isRegister && (
+              <AuthField
+                icon={{ ios: 'phone.fill', android: 'phone', web: 'phone' }}
+                keyboardType="phone-pad"
+                placeholder="Phone for invite verification"
+                returnKeyType="next"
+                value={phone}
+                onChangeText={setPhone}
+              />
+            )}
             <AuthField
               icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
               autoComplete="password"
@@ -454,14 +486,21 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     setAccessError('');
     setAdminProfile(null);
 
-    resolveAllAdminProfiles(user)
+    reload(user)
+      .catch(() => {})
+      .then(() => acceptPendingInvitationsForUser(user).catch(() => 0))
+      .then(() => resolveAllAdminProfiles(user))
       .then((profiles) => {
         if (!mounted) return;
         setAllProfiles(profiles);
         setAdminProfile(profiles[0] ?? null);
         setAdminReady(true);
         if (profiles.length === 0) {
-          setAccessError('This account does not have access to live inquiries yet.');
+          setAccessError(
+            user.emailVerified
+              ? 'This account does not have access to live inquiries yet. Ask an admin to invite this email or phone number.'
+              : 'Verify your email first. Then sign in again and the app will connect matching invitations by email or phone.',
+          );
         }
       })
       .catch((error: unknown) => {
@@ -476,6 +515,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   }, [user]);
 
   const notifyNewChatMessage = useCallback(async (chat: SupportChat, message: SupportMessage) => {
+    if (AppState.currentState === 'active') {
+      return;
+    }
+
     const [notificationsSetting, soundSetting, vibrationSetting] = await Promise.all([
       AsyncStorage.getItem('@vintra_settings_notif').catch(() => null),
       AsyncStorage.getItem('@vintra_settings_sound').catch(() => null),
@@ -3762,12 +3805,13 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
     paddingTop: 8,
+    paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.92)',
   },
   msgInputBarCompact: {
-    paddingBottom: 12,
+    paddingBottom: 24,
   },
   msgInput: {
     flex: 1,

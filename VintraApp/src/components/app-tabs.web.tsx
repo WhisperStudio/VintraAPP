@@ -6,6 +6,7 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
+import type { Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { onAuthStateChanged } from 'firebase/auth';
 import React, { useEffect, useState } from 'react';
@@ -39,11 +40,11 @@ export default function AppTabs() {
           <TabTrigger name="explore" href="/explore" asChild>
             <TabButton>Roadmap</TabButton>
           </TabTrigger>
-          <TabTrigger name="owner" href="/owner" asChild>
-            <TabButton>Owner</TabButton>
+          <TabTrigger name="settings" href="/settings" asChild>
+            <TabButton>Settings</TabButton>
           </TabTrigger>
           {isSuperAdmin && (
-            <TabTrigger name="notifications" href="/notifications" asChild>
+            <TabTrigger name="notifications" href={'/notifications' as Href} asChild>
               <TabButton>Notifications</TabButton>
             </TabTrigger>
           )}

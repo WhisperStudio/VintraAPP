@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import {
@@ -30,7 +29,7 @@ import { firebaseAuth, firebaseDb } from '@/lib/firebase';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
-import { useTranslation } from '@/lib/i18n';
+import { fetchPushTokens, sendExpoPush } from '@/lib/push-sender';
 
 /* ── Types ─────────────────────────────────────────────────── */
 type Business = {
@@ -56,7 +55,6 @@ export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 720;
-  const { t } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
 
   /* Send form */
@@ -108,23 +106,56 @@ export default function NotificationsScreen() {
     setSending(true);
     setSentOk(false);
     try {
+      const tokens = await fetchPushTokens(targetBiz);
+      const result = tokens.length
+        ? await sendExpoPush(tokens, notifTitle.trim(), notifBody.trim())
+        : { total: 0, sent: 0, failed: 0, errors: [] };
+
+      const status =
+        result.total === 0
+          ? 'no-recipients'
+          : result.failed === 0
+            ? 'sent'
+            : result.sent === 0
+              ? 'failed'
+              : 'partial';
+
       await addDoc(collection(firebaseDb, 'notificationQueue'), {
         title: notifTitle.trim(),
         body: notifBody.trim(),
         targetBusinessId: targetBiz,
-        status: 'pending',
+        status,
+        recipients: result.total,
+        sentCount: result.sent,
+        failedCount: result.failed,
+        errors: result.errors,
         createdAt: serverTimestamp(),
         createdBy: user?.email || 'unknown',
       });
 
-      setSentOk(true);
-      setNotifTitle('');
-      setNotifBody('');
-      setTargetBiz('all');
-      setTimeout(() => setSentOk(false), 3000);
+      if (result.total === 0) {
+        Alert.alert('No recipients', 'No registered devices were found for this target.');
+      } else if (result.sent === 0) {
+        Alert.alert(
+          'Send failed',
+          result.errors.length
+            ? result.errors.join('\n')
+            : 'All push notifications failed. Check APNs credentials in Expo (eas credentials).',
+        );
+      } else if (result.failed > 0) {
+        Alert.alert('Partially sent', `${result.sent} sent, ${result.failed} failed.${result.errors.length ? `\n${result.errors.join('\n')}` : ''}`);
+      }
+
+      if (result.sent > 0 || result.total === 0) {
+        setSentOk(true);
+        setNotifTitle('');
+        setNotifBody('');
+        setTargetBiz('all');
+        setTimeout(() => setSentOk(false), 3000);
+      }
     } catch (e) {
-      console.error('notifications: failed to queue', e);
-      Alert.alert('Send failed', e instanceof Error ? e.message : 'Could not queue the notification.');
+      console.error('notifications: failed to send', e);
+      Alert.alert('Send failed', e instanceof Error ? e.message : 'Could not send the notification.');
     } finally {
       setSending(false);
     }

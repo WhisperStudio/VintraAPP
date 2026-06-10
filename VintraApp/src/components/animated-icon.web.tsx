@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Keyframe, Easing } from 'react-native-reanimated';
 
@@ -65,11 +66,7 @@ export function AnimatedIcon() {
       </Animated.View>
 
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <View style={styles.logoMark}>
-          <View style={styles.logoBladeLeft} />
-          <View style={styles.logoBladeRight} />
-          <View style={styles.logoDot} />
-        </View>
+        <Image source={require('@/images/logo.png')} style={styles.logoImage} contentFit="contain" />
       </Animated.View>
     </View>
   );
@@ -109,37 +106,8 @@ const styles = StyleSheet.create({
     height: 128,
     position: 'absolute',
   },
-  logoMark: {
-    width: 70,
-    height: 58,
-  },
-  logoBladeLeft: {
-    position: 'absolute',
-    left: 4,
-    top: 3,
-    width: 24,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    transform: [{ rotateZ: '-29deg' }],
-  },
-  logoBladeRight: {
-    position: 'absolute',
-    left: 31,
-    top: 2,
-    width: 24,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#dbe8ff',
-    transform: [{ rotateZ: '29deg' }],
-  },
-  logoDot: {
-    position: 'absolute',
-    right: 0,
-    top: 5,
-    width: 15,
-    height: 15,
-    borderRadius: 8,
-    backgroundColor: '#ffffff',
+  logoImage: {
+    width: 132,
+    height: 102,
   },
 });
