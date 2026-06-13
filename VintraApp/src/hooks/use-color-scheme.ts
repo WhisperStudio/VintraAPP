@@ -1,1 +1,5 @@
-export { useColorScheme } from 'react-native';
+import { useThemePreference } from '@/lib/theme-preference';
+
+export function useColorScheme() {
+  return useThemePreference().colorScheme;
+}

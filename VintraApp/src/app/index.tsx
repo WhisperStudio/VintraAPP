@@ -64,6 +64,7 @@ import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
 import { registerPushToken, sendLocalNotification } from '@/lib/notifications';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
+import { useThemePreference } from '@/lib/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
@@ -301,7 +302,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
   );
 }
 
-function AdminBackground() {
+function AdminBackground({ isLight }: { isLight?: boolean }) {
   const move = useSharedValue(0);
   const pulse = useSharedValue(1);
 
@@ -348,11 +349,11 @@ function AdminBackground() {
 
   return (
     <View pointerEvents="none" style={styles.adminBackground}>
-      <View style={styles.auroraBase} />
-      <Animated.View style={[styles.auroraTeal, aurora1]} />
-      <Animated.View style={[styles.auroraPurple, aurora2]} />
-      <Animated.View style={[styles.auroraBlue, aurora3]} />
-      <View style={styles.meshGradientOverlay} />
+      <View style={[styles.auroraBase, isLight && styles.auroraBaseLight]} />
+      <Animated.View style={[styles.auroraTeal, isLight && styles.auroraTealLight, aurora1]} />
+      <Animated.View style={[styles.auroraPurple, isLight && styles.auroraPurpleLight, aurora2]} />
+      <Animated.View style={[styles.auroraBlue, isLight && styles.auroraBlueLight, aurora3]} />
+      <View style={[styles.meshGradientOverlay, isLight && styles.meshGradientOverlayLight]} />
     </View>
   );
 }
@@ -360,6 +361,8 @@ function AdminBackground() {
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
   const insets = useSafeAreaInsets();
   const { t: adminT, lang } = useTranslation();
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<AdminProfile[]>([]);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
@@ -431,6 +434,39 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     }
     return result;
   }, [fetchedWidgets, visibleChats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+
+      AsyncStorage.getItem('@vintra_default_widget')
+        .then((saved) => {
+          if (!mounted) return;
+          const nextWidgetKey = saved && uniqueWidgets.some((widget) => widget.key === saved) ? saved : 'all';
+          setSelectedWidgetKey((current) => {
+            if (current !== nextWidgetKey) {
+              setSelectedChatId(null);
+              setSelectedChat(null);
+            }
+            return nextWidgetKey;
+          });
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setSelectedWidgetKey((current) => {
+            if (current !== 'all') {
+              setSelectedChatId(null);
+              setSelectedChat(null);
+            }
+            return 'all';
+          });
+        });
+
+      return () => {
+        mounted = false;
+      };
+    }, [uniqueWidgets]),
+  );
 
   // Filter chats by selected widget, then by search query
   const widgetChats = selectedWidgetKey === 'all'
@@ -704,13 +740,13 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
   return (
     <>
-      <AdminBackground />
-      <View style={[styles.dashboard, compact && chatOpen && styles.dashboardCompactOpen]}>
+      <AdminBackground isLight={isLight} />
+      <View style={[styles.dashboard, isLight && styles.dashboardLight, compact && chatOpen && styles.dashboardCompactOpen]}>
 
         {/* ── TOP BAR ─────────────────────────────────────── */}
         {!(compact && chatOpen) && (
           <>
-            <View style={[styles.topBar, { paddingTop: insets.top + 4 }]}>
+            <View style={[styles.topBar, isLight && styles.topBarLight, { paddingTop: insets.top + 4 }]}>
               <View style={styles.topBarBrand}>
                 <View style={styles.topBarLogo}>
                   <Text style={styles.topBarLogoV}>V</Text>
@@ -730,7 +766,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   </Pressable>
                 ) : (
                   <View>
-                    <Text style={styles.topBarName}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
+                    <Text style={[styles.topBarName, isLight && styles.topBarNameLight]}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
                     <View style={styles.topBarLive}>
                       <View style={styles.topBarLiveDot} />
                       <Text style={styles.topBarLiveText}>LIVE CONSOLE</Text>
@@ -826,15 +862,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
           {/* LEFT: Conversation list */}
           {(!compact || !chatOpen) && (
-            <View style={[styles.sidePanel, compact && styles.sidePanelFull]}>
+            <View style={[styles.sidePanel, isLight && styles.sidePanelLight, compact && styles.sidePanelFull]}>
 
               {/* Search */}
-              <View style={styles.sideSearch}>
+              <View style={[styles.sideSearch, isLight && styles.sideSearchLight]}>
                 <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={14} tintColor="#334155" />
                 <TextInput
                   placeholder="…"
                   placeholderTextColor="#334155"
-                  style={styles.sideSearchInput}
+                  style={[styles.sideSearchInput, isLight && styles.sideSearchInputLight]}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
@@ -845,70 +881,19 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 ) : null}
               </View>
 
-              {/* Chatbot / widget switcher */}
-              {uniqueWidgets.length > 1 && (
-                <View style={styles.widgetTabBar}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.widgetTabRow}>
-                    <Pressable
-                      onPress={() => { setSelectedWidgetKey('all'); setSelectedChatId(null); }}
-                      style={({ pressed }) => [styles.widgetTab, selectedWidgetKey === 'all' && styles.widgetTabActive, pressed && styles.pressed]}>
-                      <SymbolView
-                        name={{ ios: 'square.grid.2x2.fill', android: 'grid_view', web: 'grid_view' }}
-                        size={11}
-                        tintColor={selectedWidgetKey === 'all' ? '#fff' : '#475569'}
-                      />
-                      <Text style={[styles.widgetTabText, selectedWidgetKey === 'all' && styles.widgetTabTextActive]}>All</Text>
-                      {visibleChats.length > 0 && (
-                        <View style={[styles.widgetTabCount, selectedWidgetKey === 'all' && styles.widgetTabCountActive]}>
-                          <Text style={[styles.widgetTabCountText, selectedWidgetKey === 'all' && styles.widgetTabCountTextActive]}>
-                            {visibleChats.length}
-                          </Text>
-                        </View>
-                      )}
-                    </Pressable>
-                    {uniqueWidgets.map(w => {
-                      const isActive = selectedWidgetKey === w.key;
-                      const count = visibleChats.filter(c => c.widgetKey === w.key).length;
-                      const urgent = visibleChats.some(c => c.widgetKey === w.key && c.status === 'needs-human');
-                      return (
-                        <Pressable
-                          key={w.key}
-                          onPress={() => { setSelectedWidgetKey(w.key); setSelectedChatId(null); }}
-                          style={({ pressed }) => [styles.widgetTab, isActive && styles.widgetTabActive, pressed && styles.pressed]}>
-                          {!isActive && urgent && <View style={styles.widgetTabUrgentDot} />}
-                          <Text style={[styles.widgetTabText, isActive && styles.widgetTabTextActive]} numberOfLines={1}>
-                            {w.name}
-                          </Text>
-                          {count > 0 && (
-                            <View style={[styles.widgetTabCount, isActive && styles.widgetTabCountActive, !isActive && urgent && styles.widgetTabCountUrgent]}>
-                              <Text style={[styles.widgetTabCountText, isActive && styles.widgetTabCountTextActive]}>
-                                {count}
-                              </Text>
-                            </View>
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
               {/* Stats row */}
               <View style={styles.sideStats}>
-                <View style={[styles.sideStatCard, waitingChats > 0 && styles.sideStatCardUrgent]}>
-                  <Text style={[styles.sideStatNum, waitingChats > 0 && { color: '#f87171' }]}>{waitingChats}</Text>
-                  <Text style={styles.sideStatLabel}>{adminT('admin_waiting')}</Text>
+                <View style={[styles.sideStatCard, isLight && styles.sideStatCardLight, waitingChats > 0 && styles.sideStatCardUrgent]}>
+                  <Text style={[styles.sideStatNum, isLight && styles.sideStatNumLight, waitingChats > 0 && { color: '#dc2626' }]}>{waitingChats}</Text>
+                  <Text style={[styles.sideStatLabel, isLight && styles.sideStatLabelLight]}>{adminT('admin_waiting')}</Text>
                 </View>
-                <View style={[styles.sideStatCard, { borderColor: 'rgba(15,110,255,0.2)' }]}>
+                <View style={[styles.sideStatCard, isLight && styles.sideStatCardLight, { borderColor: 'rgba(15,110,255,0.2)' }]}>
                   <Text style={[styles.sideStatNum, { color: '#0f6eff' }]}>{activeChats}</Text>
-                  <Text style={styles.sideStatLabel}>{adminT('admin_active')}</Text>
+                  <Text style={[styles.sideStatLabel, isLight && styles.sideStatLabelLight]}>{adminT('admin_active')}</Text>
                 </View>
-                <View style={styles.sideStatCard}>
-                  <Text style={styles.sideStatNum}>{chats.length}</Text>
-                  <Text style={styles.sideStatLabel}>{adminT('admin_all')}</Text>
+                <View style={[styles.sideStatCard, isLight && styles.sideStatCardLight]}>
+                  <Text style={[styles.sideStatNum, isLight && styles.sideStatNumLight]}>{chats.length}</Text>
+                  <Text style={[styles.sideStatLabel, isLight && styles.sideStatLabelLight]}>{adminT('admin_all')}</Text>
                 </View>
               </View>
 
@@ -922,15 +907,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   <View style={styles.sideEmptyIcon}>
                     <SymbolView name={{ ios: 'tray', android: 'inbox', web: 'inbox' }} size={28} tintColor="#1e293b" />
                   </View>
-                  <Text style={styles.sideEmptyTitle}>{adminT('admin_no_conversations')}</Text>
-                  <Text style={styles.sideEmptyText}>{adminT('admin_no_conversations_sub')}</Text>
+                  <Text style={[styles.sideEmptyTitle, isLight && styles.sideEmptyTitleLight]}>{adminT('admin_no_conversations')}</Text>
+                  <Text style={[styles.sideEmptyText, isLight && styles.sideEmptyTextLight]}>{adminT('admin_no_conversations_sub')}</Text>
                 </View>
               ) : (
                 <ScrollView showsVerticalScrollIndicator={false} style={styles.sideList}>
                   {unansweredChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={styles.sideSectionDot} />
-                      <Text style={styles.sideSectionText}>NEEDS REPLY</Text>
+                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>NEEDS REPLY</Text>
                       <View style={styles.sideSectionBadge}>
                         <Text style={styles.sideSectionBadgeText}>{unansweredChats.length}</Text>
                       </View>
@@ -942,7 +927,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   {servedChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={[styles.sideSectionDot, { backgroundColor: '#3d5a80' }]} />
-                      <Text style={styles.sideSectionText}>ACTIVE</Text>
+                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>ACTIVE</Text>
                     </View>
                   )}
                   {servedChats.map((chat) => (
@@ -955,11 +940,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
           {/* RIGHT: Chat area */}
           {(!compact || chatOpen) && (
-            <View style={[styles.chatArea, compact && styles.chatAreaFull]}>
+            <View style={[styles.chatArea, isLight && styles.chatAreaLight, compact && styles.chatAreaFull]}>
               {openChat ? (
                 <>
                   {/* Chat top bar */}
-                  <View style={[styles.chatTopBar, compact && { paddingTop: insets.top + 8 }]}>
+                  <View style={[styles.chatTopBar, isLight && styles.chatTopBarLight, compact && { paddingTop: insets.top + 8 }]}>
                     {compact && (
                       <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.chatBackBtn, pressed && styles.pressed]}>
                         <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={20} tintColor="#94a3b8" />
@@ -970,8 +955,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                       <View style={[styles.chatTopOnlineDot, openChat.status === 'needs-human' && { backgroundColor: '#ef4444' }]} />
                     </View>
                     <View style={styles.chatTopInfo}>
-                      <Text style={styles.chatTopName}>{openChat.visitorName || 'Visitor'}</Text>
-                      <Text style={styles.chatTopMeta} numberOfLines={1}>
+                      <Text style={[styles.chatTopName, isLight && styles.chatTopNameLight]}>{openChat.visitorName || 'Visitor'}</Text>
+                      <Text style={[styles.chatTopMeta, isLight && styles.chatTopMetaLight]} numberOfLines={1}>
                         {openChat.pageTitle || openChat.pageUrl || 'Website visitor'}
                       </Text>
                     </View>
@@ -979,13 +964,14 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   </View>
 
                   {/* Action toolbar */}
-                  <View style={styles.chatToolbar}>
+                  <View style={[styles.chatToolbar, isLight && styles.chatToolbarLight]}>
                     <View style={styles.handoffControl}>
                       <Pressable
                         disabled={sending}
                         onPress={() => handleStatusChange('open')}
                         style={({ pressed }) => [
                           styles.handoffButton,
+                          isLight && styles.handoffButtonLight,
                           openChat.status === 'open' && styles.handoffButtonHumanActive,
                           openChat.status === 'needs-human' && styles.handoffButtonWaiting,
                           sending && styles.buttonDisabled,
@@ -995,13 +981,13 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                           <SymbolView
                             name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }}
                             size={14}
-                            tintColor={openChat.status === 'open' ? '#ffffff' : openChat.status === 'needs-human' ? '#fca5a5' : '#64748b'}
+                            tintColor={openChat.status === 'open' ? '#ffffff' : openChat.status === 'needs-human' ? (isLight ? '#dc2626' : '#fca5a5') : '#64748b'}
                           />
-                          <Text style={[styles.handoffTitle, openChat.status === 'open' && styles.handoffTitleActive, openChat.status === 'needs-human' && styles.handoffTitleWaiting]}>
+                          <Text style={[styles.handoffTitle, isLight && styles.handoffTitleLight, openChat.status === 'open' && styles.handoffTitleActive, openChat.status === 'needs-human' && styles.handoffTitleWaiting, openChat.status === 'needs-human' && isLight && styles.handoffTitleWaitingLight]}>
                             {compact ? 'Human' : 'Take over'}
                           </Text>
                         </View>
-                        <Text style={[styles.handoffSub, openChat.status === 'open' && styles.handoffSubActive, openChat.status === 'needs-human' && styles.handoffSubWaiting]} numberOfLines={1}>
+                        <Text style={[styles.handoffSub, isLight && styles.handoffSubLight, openChat.status === 'open' && styles.handoffSubActive, openChat.status === 'needs-human' && styles.handoffSubWaiting, openChat.status === 'needs-human' && isLight && styles.handoffSubWaitingLight]} numberOfLines={1}>
                           {openChat.status === 'open' ? 'You are handling' : openChat.status === 'needs-human' ? 'Needs reply' : 'Assign to you'}
                         </Text>
                       </Pressable>
@@ -1010,6 +996,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         onPress={() => handleStatusChange('ai-active')}
                         style={({ pressed }) => [
                           styles.handoffButton,
+                          isLight && styles.handoffButtonLight,
                           openChat.status === 'ai-active' && styles.handoffButtonAiActive,
                           sending && styles.buttonDisabled,
                           pressed && styles.pressed,
@@ -1020,11 +1007,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                             size={14}
                             tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#64748b'}
                           />
-                          <Text style={[styles.handoffTitle, openChat.status === 'ai-active' && styles.handoffTitleActive]}>
+                          <Text style={[styles.handoffTitle, isLight && styles.handoffTitleLight, openChat.status === 'ai-active' && styles.handoffTitleActive]}>
                             {compact ? 'AI' : 'Give to AI'}
                           </Text>
                         </View>
-                        <Text style={[styles.handoffSub, openChat.status === 'ai-active' && styles.handoffSubActive]} numberOfLines={1}>
+                        <Text style={[styles.handoffSub, isLight && styles.handoffSubLight, openChat.status === 'ai-active' && styles.handoffSubActive]} numberOfLines={1}>
                           {openChat.status === 'ai-active' ? 'AI is handling' : 'Let AI answer'}
                         </Text>
                       </Pressable>
@@ -1042,7 +1029,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   {/* Messages */}
                   <ScrollView
                     ref={messageListRef}
-                    style={styles.msgScroll}
+                    style={[styles.msgScroll, isLight && styles.msgScrollLight]}
                     contentContainerStyle={styles.msgScrollContent}
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
@@ -1059,14 +1046,14 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
                   {/* Quick replies */}
                   {quickRepliesEnabled && quickReplies.length > 0 && (
-                    <View style={styles.quickBar}>
+                    <View style={[styles.quickBar, isLight && styles.quickBarLight]}>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
                         {quickReplies.map((item) => (
                           <Pressable
                             key={item.id}
                             onPress={() => setReply(item.value)}
-                            style={({ pressed }) => [styles.quickChip, pressed && styles.pressed]}>
-                            <Text style={styles.quickChipText}>{item.label}</Text>
+                            style={({ pressed }) => [styles.quickChip, isLight && styles.quickChipLight, pressed && styles.pressed]}>
+                            <Text style={[styles.quickChipText, isLight && styles.quickChipTextLight]}>{item.label}</Text>
                           </Pressable>
                         ))}
                       </ScrollView>
@@ -1074,13 +1061,13 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   )}
 
                   {/* Input */}
-                  <View style={[styles.msgInputBar, compact && styles.msgInputBarCompact]}>
+                  <View style={[styles.msgInputBar, isLight && styles.msgInputBarLight, compact && styles.msgInputBarCompact]}>
                     <TextInput
                       multiline
                       scrollEnabled
                       placeholder={adminT('admin_reply_placeholder')}
-                      placeholderTextColor="#283447"
-                      style={styles.msgInput}
+                      placeholderTextColor={isLight ? '#94a3b8' : '#283447'}
+                      style={[styles.msgInput, isLight && styles.msgInputLight]}
                       value={reply}
                       onChangeText={setReply}
                       onSubmitEditing={handleSendReply}
@@ -1100,8 +1087,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   <View style={styles.chatPlaceholderIcon}>
                     <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} size={30} tintColor="#0f6eff" />
                   </View>
-                  <Text style={styles.chatPlaceholderTitle}>Select a conversation</Text>
-                  <Text style={styles.chatPlaceholderText}>Pick a chat from the left panel to start responding to your visitors.</Text>
+                  <Text style={[styles.chatPlaceholderTitle, isLight && styles.chatPlaceholderTitleLight]}>Select a conversation</Text>
+                  <Text style={[styles.chatPlaceholderText, isLight && styles.chatPlaceholderTextLight]}>Pick a chat from the left panel to start responding to your visitors.</Text>
                 </View>
               )}
             </View>
@@ -1145,12 +1132,14 @@ function ConversationSection({ title, count, urgent }: { title: string; count: n
 
 function StatusPill({ status }: { status: string }) {
   const { t } = useTranslation();
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const label = status === 'needs-human' ? t('status_waiting') : status === 'open' ? t('status_active') : status === 'ai-active' ? t('status_ai') : status;
 
   return (
-    <View style={[styles.chatStatusPill, status === 'needs-human' && styles.chatStatusWaiting]}>
+    <View style={[styles.chatStatusPill, isLight && styles.chatStatusPillLight, status === 'needs-human' && styles.chatStatusWaiting]}>
       <View style={[styles.statusDot, status !== 'ai-active' && styles.statusDotActive]} />
-      <ThemedText style={styles.chatStatusText}>{label}</ThemedText>
+      <ThemedText style={[styles.chatStatusText, isLight && styles.chatStatusTextLight]}>{label}</ThemedText>
     </View>
   );
 }
@@ -1167,7 +1156,35 @@ function statusLabel(status: string): string {
   return 'Active';
 }
 
+function TypewriterText({ text, style }: { text: string; style: any }) {
+  const [visibleText, setVisibleText] = useState('');
+
+  useEffect(() => {
+    if (!text) {
+      setVisibleText('');
+      return undefined;
+    }
+
+    let index = 0;
+    setVisibleText('');
+    const step = Math.max(8, Math.min(24, 900 / text.length));
+    const timer = setInterval(() => {
+      index += 1;
+      setVisibleText(text.slice(0, index));
+      if (index >= text.length) {
+        clearInterval(timer);
+      }
+    }, step);
+
+    return () => clearInterval(timer);
+  }, [text]);
+
+  return <Text style={style}>{visibleText}</Text>;
+}
+
 function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active: boolean; onPress: () => void }) {
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const lastMessage = chat.messages.at(-1);
   const needsAnswer = chat.status === 'needs-human';
   const isAI = chat.status === 'ai-active';
@@ -1179,23 +1196,23 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
     <Animated.View entering={FadeInDown.duration(280)} layout={LinearTransition.springify().damping(18)}>
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.chatRow, active && styles.chatRowActive, needsAnswer && styles.chatRowUrgent, pressed && styles.pressed]}>
+        style={({ pressed }) => [styles.chatRow, isLight && styles.chatRowLight, active && styles.chatRowActive, active && isLight && styles.chatRowActiveLight, needsAnswer && styles.chatRowUrgent, pressed && styles.pressed]}>
         <View style={[styles.chatRowAccentBar, { backgroundColor: active || needsAnswer ? accentColor : 'transparent' }]} />
         <View style={[styles.chatRowAvatar, { backgroundColor: bg }]}>
           <Text style={styles.chatRowAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
-          <View style={[styles.chatRowStatusDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.chatRowStatusDot, isLight && styles.chatRowStatusDotLight, { backgroundColor: accentColor }]} />
         </View>
         <View style={styles.chatRowBody}>
           <View style={styles.chatRowTop}>
-            <Text style={[styles.chatRowName, active && styles.chatRowNameActive]} numberOfLines={1}>
+            <Text style={[styles.chatRowName, active && styles.chatRowNameActive, isLight && styles.chatRowNameLight, active && isLight && styles.chatRowNameActiveLight]} numberOfLines={1}>
               {chat.visitorName || 'Visitor'}
             </Text>
-            <Text style={styles.chatRowTime}>{formatTime(chat.updatedAt)}</Text>
+            <Text style={[styles.chatRowTime, isLight && styles.chatRowTimeLight]}>{formatTime(chat.updatedAt)}</Text>
           </View>
-          <Text style={styles.chatRowPreview} numberOfLines={1}>
+          <Text style={[styles.chatRowPreview, isLight && styles.chatRowPreviewLight]} numberOfLines={1}>
             {lastMessage?.text || chat.preview || 'No messages yet'}
           </Text>
-          <Text style={styles.chatRowSource} numberOfLines={1}>
+          <Text style={[styles.chatRowSource, isLight && styles.chatRowSourceLight]} numberOfLines={1}>
             {chat.pageTitle || chat.countryCode || 'vintranordic.com'}
           </Text>
         </View>
@@ -1208,6 +1225,8 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
 }
 
 function MessageBubble({ message }: { message: SupportMessage }) {
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const fromAdmin = message.role === 'support';
   const fromSystem = message.role === 'system';
 
@@ -1222,13 +1241,13 @@ function MessageBubble({ message }: { message: SupportMessage }) {
   return (
     <View style={[styles.bubbleRow, fromAdmin && styles.bubbleRowAdmin]}>
       {!fromAdmin && (
-        <View style={styles.bubbleVisitorAvatar}>
-          <Text style={styles.bubbleVisitorAvatarText}>V</Text>
+        <View style={[styles.bubbleVisitorAvatar, isLight && styles.bubbleVisitorAvatarLight]}>
+          <Text style={[styles.bubbleVisitorAvatarText, isLight && styles.bubbleVisitorAvatarTextLight]}>V</Text>
         </View>
       )}
-      <View style={[styles.bubble, fromAdmin && styles.bubbleAdmin]}>
-        <Text style={[styles.bubbleText, fromAdmin && styles.bubbleTextAdmin]}>{message.text}</Text>
-        <Text style={[styles.bubbleTime, fromAdmin && styles.bubbleTimeAdmin]}>{formatTime(message.createdAt)}</Text>
+      <View style={[styles.bubble, isLight && styles.bubbleLight, fromAdmin && styles.bubbleAdmin, fromAdmin && isLight && styles.bubbleAdminLight]}>
+        <TypewriterText text={message.text} style={[styles.bubbleText, isLight && styles.bubbleTextLight, fromAdmin && styles.bubbleTextAdmin]} />
+        <Text style={[styles.bubbleTime, isLight && styles.bubbleTimeLight, fromAdmin && styles.bubbleTimeAdmin]}>{formatTime(message.createdAt)}</Text>
       </View>
     </View>
   );
@@ -1240,6 +1259,7 @@ function formatTime(date: Date) {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useThemePreference();
   const { width } = useWindowDimensions();
   const compact = width < 760;
   const [user, setUser] = useState<User | null>(null);
@@ -1261,7 +1281,7 @@ export default function HomeScreen() {
   if (!user) return null;
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, colorScheme === 'light' && styles.containerLight]}>
       <AnimatedBackdrop />
       {/* Normal admin list view - chat not open on mobile */}
       {!(compact && chatOpen) && (
@@ -1289,7 +1309,7 @@ export default function HomeScreen() {
           presentationStyle="fullScreen"
           statusBarTranslucent={true}
           onRequestClose={() => setChatOpen(false)}>
-          <ThemedView style={styles.container}>
+          <ThemedView style={[styles.container, colorScheme === 'light' && styles.containerLight]}>
             <AnimatedBackdrop />
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1314,6 +1334,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#141e2e',
+  },
+  containerLight: {
+    backgroundColor: '#f2f6fb',
   },
   keyboardView: {
     flex: 1,
@@ -1561,6 +1584,9 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 0,
     padding: 0,
+  },
+  dashboardLight: {
+    backgroundColor: '#f2f6fb',
   },
   dashboardCompactOpen: {
     padding: 0,
@@ -2696,6 +2722,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(15,110,255,0.25)',
   },
+  chatStatusPillLight: {
+    backgroundColor: '#e8f1ff',
+    borderColor: '#b8d2ff',
+  },
   chatStatusWaiting: {
     backgroundColor: 'rgba(239,68,68,0.15)',
     borderColor: 'rgba(239,68,68,0.35)',
@@ -2705,6 +2735,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '900',
+  },
+  chatStatusTextLight: {
+    color: '#0f3f91',
   },
   messageRow: {
     alignItems: 'flex-start',
@@ -2886,6 +2919,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#141e2e',
   },
+  auroraBaseLight: {
+    backgroundColor: '#f2f6fb',
+  },
   auroraTeal: {
     position: 'absolute',
     top: -120,
@@ -2894,6 +2930,9 @@ const styles = StyleSheet.create({
     height: 650,
     borderRadius: 325,
     backgroundColor: 'rgba(15,110,255,0.14)',
+  },
+  auroraTealLight: {
+    backgroundColor: 'rgba(15,110,255,0.10)',
   },
   auroraPurple: {
     position: 'absolute',
@@ -2904,6 +2943,9 @@ const styles = StyleSheet.create({
     borderRadius: 300,
     backgroundColor: 'rgba(139,92,246,0.1)',
   },
+  auroraPurpleLight: {
+    backgroundColor: 'rgba(3,168,78,0.10)',
+  },
   auroraBlue: {
     position: 'absolute',
     bottom: -180,
@@ -2913,9 +2955,15 @@ const styles = StyleSheet.create({
     borderRadius: 275,
     backgroundColor: 'rgba(15,110,255,0.12)',
   },
+  auroraBlueLight: {
+    backgroundColor: 'rgba(14,165,233,0.16)',
+  },
   meshGradientOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(20,30,46,0.15)',
+  },
+  meshGradientOverlayLight: {
+    backgroundColor: 'rgba(255,255,255,0.42)',
   },
 
   /* ── TOP BAR ──────────────────────────────────────── */
@@ -2928,6 +2976,10 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.88)',
     gap: 10,
+  },
+  topBarLight: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderBottomColor: '#dbe7f4',
   },
   topBarBrand: {
     flexDirection: 'row',
@@ -2956,6 +3008,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f1f5f9',
     letterSpacing: 0.2,
+  },
+  topBarNameLight: {
+    color: '#0f172a',
   },
   topBarNameAccent: {
     color: '#0f6eff',
@@ -3079,6 +3134,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: 'rgba(0,0,0,0.18)',
   },
+  widgetTabBarLight: {
+    backgroundColor: '#f8fbff',
+    borderBottomColor: '#dbe7f4',
+  },
   widgetTabRow: {
     flexDirection: 'row',
     gap: 5,
@@ -3095,6 +3154,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.07)',
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
+  widgetTabLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e3f0',
+  },
   widgetTabActive: {
     backgroundColor: '#0f6eff',
     borderColor: 'rgba(15,110,255,0.55)',
@@ -3104,6 +3167,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     maxWidth: 100,
+  },
+  widgetTabTextLight: {
+    color: '#334155',
   },
   widgetTabTextActive: {
     color: '#ffffff',
@@ -3257,6 +3323,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.03)',
     overflow: 'hidden',
   },
+  sidePanelLight: {
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderRightColor: '#dbe7f4',
+  },
   sidePanelFull: {
     width: '100%',
     flexDirection: 'column',
@@ -3275,11 +3345,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
   },
+  sideSearchLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e3f0',
+  },
   sideSearchInput: {
     flex: 1,
     fontSize: 13,
     color: '#cbd5e1',
     fontWeight: '500',
+  },
+  sideSearchInputLight: {
+    color: '#0f172a',
   },
   sideStats: {
     flexDirection: 'row',
@@ -3297,6 +3374,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 1,
   },
+  sideStatCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce6f2',
+  },
   sideStatCardUrgent: {
     borderColor: 'rgba(239,68,68,0.2)',
     backgroundColor: 'rgba(239,68,68,0.06)',
@@ -3307,12 +3388,18 @@ const styles = StyleSheet.create({
     color: '#64748b',
     lineHeight: 20,
   },
+  sideStatNumLight: {
+    color: '#0f172a',
+  },
   sideStatLabel: {
     fontSize: 9,
     fontWeight: '600',
     color: '#475569',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
+  },
+  sideStatLabelLight: {
+    color: '#64748b',
   },
   sideLoading: {
     flex: 1,
@@ -3344,6 +3431,9 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
   },
+  sideEmptyTitleLight: {
+    color: '#0f172a',
+  },
   sideEmptyText: {
     fontSize: 12,
     fontWeight: '500',
@@ -3351,6 +3441,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
     maxWidth: 220,
+  },
+  sideEmptyTextLight: {
+    color: '#64748b',
   },
   sideList: {
     flex: 1,
@@ -3375,6 +3468,9 @@ const styles = StyleSheet.create({
     color: '#64748b',
     letterSpacing: 1.2,
     flex: 1,
+  },
+  sideSectionTextLight: {
+    color: '#475569',
   },
   sideSectionBadge: {
     paddingHorizontal: 6,
@@ -3401,10 +3497,17 @@ const styles = StyleSheet.create({
     gap: 10,
     overflow: 'hidden',
   },
+  chatRowLight: {
+    backgroundColor: 'rgba(255,255,255,0.52)',
+  },
   chatRowActive: {
     backgroundColor: 'rgba(15,110,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(15,110,255,0.2)',
+  },
+  chatRowActiveLight: {
+    backgroundColor: '#e8f1ff',
+    borderColor: '#9ec2ff',
   },
   chatRowUrgent: {
     backgroundColor: 'rgba(239,68,68,0.05)',
@@ -3438,6 +3541,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#141e2e',
   },
+  chatRowStatusDotLight: {
+    borderColor: '#ffffff',
+  },
   chatRowBody: {
     flex: 1,
     gap: 2,
@@ -3454,13 +3560,22 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     flex: 1,
   },
+  chatRowNameLight: {
+    color: '#162033',
+  },
   chatRowNameActive: {
     color: '#e2e8f0',
+  },
+  chatRowNameActiveLight: {
+    color: '#0f172a',
   },
   chatRowTime: {
     fontSize: 10,
     fontWeight: '600',
     color: '#3d6090',
+  },
+  chatRowTimeLight: {
+    color: '#7a8aa0',
   },
   chatRowPreview: {
     fontSize: 12,
@@ -3468,10 +3583,16 @@ const styles = StyleSheet.create({
     color: '#64748b',
     lineHeight: 16,
   },
+  chatRowPreviewLight: {
+    color: '#475569',
+  },
   chatRowSource: {
     fontSize: 10,
     fontWeight: '500',
     color: '#3d6090',
+  },
+  chatRowSourceLight: {
+    color: '#8a9aaf',
   },
   chatRowBadge: {
     paddingHorizontal: 7,
@@ -3491,6 +3612,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
+  chatAreaLight: {
+    backgroundColor: 'rgba(248,251,255,0.72)',
+  },
   chatAreaFull: {
     width: '100%',
   },
@@ -3503,6 +3627,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.85)',
+  },
+  chatTopBarLight: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderBottomColor: '#dbe7f4',
   },
   chatBackBtn: {
     width: 36,
@@ -3548,9 +3676,15 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     letterSpacing: 0.1,
   },
+  chatTopNameLight: {
+    color: '#0f172a',
+  },
   chatTopMeta: {
     fontSize: 11,
     fontWeight: '500',
+    color: '#64748b',
+  },
+  chatTopMetaLight: {
     color: '#64748b',
   },
 
@@ -3564,6 +3698,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.04)',
     backgroundColor: 'rgba(20,30,46,0.7)',
+  },
+  chatToolbarLight: {
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderBottomColor: '#dbe7f4',
   },
   handoffControl: {
     flex: 1,
@@ -3583,6 +3721,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.035)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
+  },
+  handoffButtonLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e3f0',
   },
   handoffButtonHumanActive: {
     backgroundColor: '#0f6eff',
@@ -3615,22 +3757,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+  handoffTitleLight: {
+    color: '#334155',
+  },
   handoffTitleActive: {
     color: '#ffffff',
   },
   handoffTitleWaiting: {
     color: '#fca5a5',
   },
+  handoffTitleWaitingLight: {
+    color: '#dc2626',
+  },
   handoffSub: {
     color: '#475569',
     fontSize: 10,
     fontWeight: '700',
+  },
+  handoffSubLight: {
+    color: '#64748b',
   },
   handoffSubActive: {
     color: 'rgba(255,255,255,0.78)',
   },
   handoffSubWaiting: {
     color: 'rgba(252,165,165,0.75)',
+  },
+  handoffSubWaitingLight: {
+    color: '#b91c1c',
   },
   toolBtn: {
     flexDirection: 'row',
@@ -3686,6 +3840,9 @@ const styles = StyleSheet.create({
   msgScroll: {
     flex: 1,
   },
+  msgScrollLight: {
+    backgroundColor: 'rgba(255,255,255,0.34)',
+  },
   msgScrollContent: {
     padding: 14,
     gap: 8,
@@ -3731,10 +3888,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 18,
   },
+  bubbleVisitorAvatarLight: {
+    backgroundColor: '#e8eef7',
+  },
   bubbleVisitorAvatarText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#94a3b8',
+  },
+  bubbleVisitorAvatarTextLight: {
+    color: '#475569',
   },
   bubble: {
     maxWidth: 280,
@@ -3747,17 +3910,28 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     gap: 4,
   },
+  bubbleLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe7f4',
+  },
   bubbleAdmin: {
     backgroundColor: 'rgba(15,110,255,0.18)',
     borderColor: 'rgba(15,110,255,0.3)',
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 4,
   },
+  bubbleAdminLight: {
+    backgroundColor: '#0f6eff',
+    borderColor: '#0f6eff',
+  },
   bubbleText: {
     fontSize: 14,
     fontWeight: '500',
     color: '#cbd5e1',
     lineHeight: 20,
+  },
+  bubbleTextLight: {
+    color: '#1e293b',
   },
   bubbleTextAdmin: {
     color: '#e2e8f0',
@@ -3768,6 +3942,9 @@ const styles = StyleSheet.create({
     color: '#4a6080',
     textAlign: 'right',
   },
+  bubbleTimeLight: {
+    color: '#94a3b8',
+  },
   bubbleTimeAdmin: {
     color: 'rgba(147,197,253,0.5)',
   },
@@ -3777,6 +3954,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
     backgroundColor: 'rgba(20,30,46,0.7)',
+  },
+  quickBarLight: {
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderTopColor: '#dbe7f4',
   },
   quickBarScroll: {
     flexDirection: 'row',
@@ -3792,10 +3973,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+  quickChipLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#d8e3f0',
+  },
   quickChipText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#64748b',
+  },
+  quickChipTextLight: {
+    color: '#334155',
   },
 
   /* ── INPUT BAR ────────────────────────────────────── */
@@ -3809,6 +3997,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.92)',
+  },
+  msgInputBarLight: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderTopColor: '#dbe7f4',
   },
   msgInputBarCompact: {
     paddingBottom: 24,
@@ -3826,6 +4018,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#e2e8f0',
+  },
+  msgInputLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#d7e2ef',
+    color: '#0f172a',
   },
   msgSendBtn: {
     width: 40,
@@ -3872,6 +4069,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.2,
   },
+  chatPlaceholderTitleLight: {
+    color: '#0f172a',
+  },
   chatPlaceholderText: {
     fontSize: 13,
     fontWeight: '500',
@@ -3879,5 +4079,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     maxWidth: 240,
+  },
+  chatPlaceholderTextLight: {
+    color: '#64748b',
   },
 });

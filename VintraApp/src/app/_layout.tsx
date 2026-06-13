@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AuthScreen } from './index';
@@ -11,10 +11,19 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { VintraChatWidget } from '@/components/vintra-chat-widget';
 import { firebaseAuth } from '@/lib/firebase';
-import { LanguageProvider } from '@/lib/i18n';
+import { LanguageProvider, useTranslation } from '@/lib/i18n';
+import { ThemePreferenceProvider, useThemePreference, type ThemePreference } from '@/lib/theme-preference';
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  return (
+    <ThemePreferenceProvider>
+      <RootLayoutContent />
+    </ThemePreferenceProvider>
+  );
+}
+
+function RootLayoutContent() {
+  const { colorScheme, ready: themeReady, savedTheme, setTheme } = useThemePreference();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 760;
@@ -40,18 +49,26 @@ export default function RootLayout() {
     return unsubAuth;
   }, []);
 
-  const isLoggedIn = authReady && !!user;
+  const isLoggedIn = authReady && themeReady && !!user;
+  const showThemePrompt = isLoggedIn && !savedTheme;
+
+  const chooseTheme = (theme: ThemePreference) => {
+    setTheme(theme).catch(() => {});
+  };
 
   return (
     <LanguageProvider>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      {!authReady ? (
-        <View style={{ flex: 1, backgroundColor: '#06111f', alignItems: 'center', justifyContent: 'center' }}>
+      {!authReady || !themeReady ? (
+        <View style={[styles.loadingScreen, { backgroundColor: colorScheme === 'dark' ? '#06111f' : '#f5f8fc' }]}>
           <ActivityIndicator color="#ffffff" size="large" />
         </View>
       ) : isLoggedIn ? (
-        <AppTabs />
+        <>
+          <AppTabs />
+          <ThemeChoiceModal visible={showThemePrompt} onChoose={chooseTheme} />
+        </>
       ) : (
         <View style={{ flex: 1, backgroundColor: '#06111f' }}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -75,3 +92,127 @@ export default function RootLayout() {
     </LanguageProvider>
   );
 }
+
+function ThemeChoiceModal({ visible, onChoose }: { visible: boolean; onChoose: (theme: ThemePreference) => void }) {
+  const { t } = useTranslation();
+
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="box-none" style={styles.themeOverlay}>
+      <View style={styles.themeCard}>
+        <Text style={styles.themeTitle}>{t('theme_prompt_title')}</Text>
+        <Text style={styles.themeLead}>{t('theme_prompt_lead')}</Text>
+        <View style={styles.themeOptions}>
+          <Pressable onPress={() => onChoose('light')} style={({ pressed }) => [styles.themeOption, pressed && styles.pressed]}>
+            <View style={[styles.themePreview, styles.themePreviewLight]}>
+              <View style={[styles.themePreviewLine, { backgroundColor: '#0f172a' }]} />
+              <View style={[styles.themePreviewLineSmall, { backgroundColor: '#64748b' }]} />
+            </View>
+            <Text style={styles.themeOptionTitle}>Light mode</Text>
+          </Pressable>
+          <Pressable onPress={() => onChoose('dark')} style={({ pressed }) => [styles.themeOption, styles.themeOptionDark, pressed && styles.pressed]}>
+            <View style={[styles.themePreview, styles.themePreviewDark]}>
+              <View style={[styles.themePreviewLine, { backgroundColor: '#ffffff' }]} />
+              <View style={[styles.themePreviewLineSmall, { backgroundColor: '#94a3b8' }]} />
+            </View>
+            <Text style={[styles.themeOptionTitle, styles.themeOptionTitleDark]}>Dark mode</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeOverlay: {
+    position: 'absolute',
+    inset: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    padding: 24,
+    zIndex: 100,
+  },
+  themeCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 22,
+    backgroundColor: '#ffffff',
+    gap: 16,
+  },
+  themeTitle: {
+    color: '#0f172a',
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  themeLead: {
+    color: '#64748b',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  themeOptions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  themeOption: {
+    flex: 1,
+    minHeight: 138,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#dbe4ef',
+    justifyContent: 'space-between',
+  },
+  themeOptionDark: {
+    backgroundColor: '#0f172a',
+    borderColor: '#1e293b',
+  },
+  themePreview: {
+    height: 70,
+    borderRadius: 12,
+    padding: 12,
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  themePreviewLight: {
+    backgroundColor: '#ffffff',
+  },
+  themePreviewDark: {
+    backgroundColor: '#020617',
+  },
+  themePreviewLine: {
+    width: '70%',
+    height: 8,
+    borderRadius: 8,
+  },
+  themePreviewLineSmall: {
+    width: '48%',
+    height: 7,
+    borderRadius: 8,
+  },
+  themeOptionTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  themeOptionTitleDark: {
+    color: '#ffffff',
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});

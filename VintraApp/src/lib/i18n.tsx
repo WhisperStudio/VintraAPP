@@ -13,6 +13,8 @@ const T = {
     tab_home: 'Home',
     tab_analyse: 'Analytics',
     tab_settings: 'Settings',
+    theme_prompt_title: 'Choose appearance',
+    theme_prompt_lead: 'Pick the mode you want to use in Vintra. You can change it later in settings.',
 
     /* Settings */
     settings_title: 'Settings',
@@ -24,6 +26,9 @@ const T = {
     settings_sound_desc: 'Play sound for new incoming messages',
     settings_vib_label: 'Haptic Vibration',
     settings_vib_desc: 'Vibrate phone on newly received messages',
+    settings_section_appearance: 'Appearance',
+    settings_theme_light: 'Light mode',
+    settings_theme_dark: 'Dark mode',
     settings_section_lang: 'Language',
     settings_lang_auto: 'Auto (device language)',
     settings_lang_en: 'English',
@@ -102,6 +107,8 @@ const T = {
     tab_home: 'Hjem',
     tab_analyse: 'Analyse',
     tab_settings: 'Innstillinger',
+    theme_prompt_title: 'Velg utseende',
+    theme_prompt_lead: 'Velg modusen du vil bruke i Vintra. Du kan endre det senere i innstillinger.',
 
     /* Settings */
     settings_title: 'Innstillinger',
@@ -113,6 +120,9 @@ const T = {
     settings_sound_desc: 'Spill av lyd for nye innkommende meldinger',
     settings_vib_label: 'Haptisk vibrasjon',
     settings_vib_desc: 'Vibrer telefonen ved nye meldinger',
+    settings_section_appearance: 'Utseende',
+    settings_theme_light: 'Lys modus',
+    settings_theme_dark: 'Mørk modus',
     settings_section_lang: 'Språk',
     settings_lang_auto: 'Auto (enhetsspråk)',
     settings_lang_en: 'Engelsk',

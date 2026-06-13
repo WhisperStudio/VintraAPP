@@ -19,6 +19,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTranslation, type RawLang } from '@/lib/i18n';
 import { resolveAllAdminProfiles, fetchWidgets, type AdminProfile, type Widget } from '@/lib/admin-chat';
 import { requestNotificationAccess } from '@/lib/notifications';
+import { useThemePreference, type ThemePreference } from '@/lib/theme-preference';
 import {
   getDefaultQuickReplies,
   loadQuickReplies,
@@ -29,6 +30,8 @@ import {
 } from '@/lib/quick-replies';
 
 function MovingBackground() {
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const move = useSharedValue(0);
 
   useEffect(() => {
@@ -45,8 +48,8 @@ function MovingBackground() {
 
   return (
     <View pointerEvents="none" style={styles.background}>
-      <Animated.View style={[styles.topBand, topBand]} />
-      <Animated.View style={[styles.bottomBand, bottomBand]} />
+      <Animated.View style={[styles.topBand, isLight && styles.topBandLight, topBand]} />
+      <Animated.View style={[styles.bottomBand, isLight && styles.bottomBandLight, bottomBand]} />
     </View>
   );
 }
@@ -59,19 +62,22 @@ function SettingRow({ icon, label, description, value, onValueChange, iconBg = '
   onValueChange: (v: boolean) => void;
   iconBg?: string;
 }) {
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
+
   return (
     <View style={styles.settingRow}>
       <View style={[styles.settingIcon, { backgroundColor: iconBg }]}>
         <SymbolView name={icon} size={20} tintColor="#ffffff" />
       </View>
       <View style={styles.settingContent}>
-        <ThemedText style={styles.settingLabel}>{label}</ThemedText>
-        <ThemedText style={styles.settingDescription}>{description}</ThemedText>
+        <ThemedText style={[styles.settingLabel, isLight && styles.settingLabelLight]}>{label}</ThemedText>
+        <ThemedText style={[styles.settingDescription, isLight && styles.settingDescriptionLight]}>{description}</ThemedText>
       </View>
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: '#1d2736', true: '#03a84e' }}
+        trackColor={{ false: isLight ? '#cbd5e1' : '#1d2736', true: '#03a84e' }}
         thumbColor="#ffffff"
         ios_backgroundColor="#1d2736"
       />
@@ -84,6 +90,8 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const compact = width < 720;
   const { t, lang, savedLang, setLang } = useTranslation();
+  const { savedTheme, colorScheme, setTheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
   const [user, setUser] = useState<User | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -240,9 +248,14 @@ export default function SettingsScreen() {
     { key: 'en',   label: () => t('settings_lang_en') },
     { key: 'no',   label: () => t('settings_lang_no') },
   ];
+  const themeOptions: { key: ThemePreference; label: () => string; icon: any }[] = [
+    { key: 'light', label: () => t('settings_theme_light'), icon: { ios: 'sun.max.fill', android: 'light_mode', web: 'light_mode' } },
+    { key: 'dark', label: () => t('settings_theme_dark'), icon: { ios: 'moon.fill', android: 'dark_mode', web: 'dark_mode' } },
+  ];
+  const activeTheme = savedTheme ?? colorScheme;
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, isLight && styles.containerLight]}>
       <MovingBackground />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -251,17 +264,17 @@ export default function SettingsScreen() {
           { paddingTop: insets.top + Spacing.four, paddingBottom: insets.bottom + BottomTabInset + Spacing.five },
         ]}>
         <View style={styles.center}>
-          <View style={styles.iconBox}>
+          <View style={[styles.iconBox, isLight && styles.iconBoxLight]}>
             <SymbolView name={{ ios: 'gearshape.fill', android: 'settings', web: 'settings' }} size={28} tintColor="#ffffff" />
           </View>
-          <ThemedText style={[styles.title, compact && styles.titleCompact]}>{t('settings_title')}</ThemedText>
-          <ThemedText style={styles.lead}>{t('settings_lead')}</ThemedText>
+          <ThemedText style={[styles.title, isLight && styles.titleLight, compact && styles.titleCompact]}>{t('settings_title')}</ThemedText>
+          <ThemedText style={[styles.lead, isLight && styles.leadLight]}>{t('settings_lead')}</ThemedText>
         </View>
 
         {/* Notifications */}
-        <View style={styles.panel}>
-          <ThemedText style={styles.sectionTitle}>{t('settings_section_notif')}</ThemedText>
-          <View style={styles.divider} />
+        <View style={[styles.panel, isLight && styles.panelLight]}>
+          <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_notif')}</ThemedText>
+          <View style={[styles.divider, isLight && styles.dividerLight]} />
           <SettingRow
             icon={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
             iconBg="#3b82f6"
@@ -288,10 +301,50 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* Appearance */}
+        <View style={[styles.panel, isLight && styles.panelLight]}>
+          <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_appearance')}</ThemedText>
+          <View style={[styles.divider, isLight && styles.dividerLight]} />
+          <View style={styles.langOptions}>
+            {themeOptions.map(opt => {
+              const active = activeTheme === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setTheme(opt.key).catch(console.error)}
+                  style={({ pressed }) => [
+                    styles.langOption,
+                    isLight && styles.langOptionLight,
+                    active && styles.langOptionActive,
+                    pressed && styles.pressed,
+                  ]}>
+                  <View style={styles.themeOptionLeft}>
+                    <SymbolView
+                      name={opt.icon}
+                      size={16}
+                      tintColor={active ? '#03a84e' : '#9fb1ce'}
+                    />
+                    <Text style={[styles.langOptionText, active && styles.langOptionTextActive]}>
+                      {opt.label()}
+                    </Text>
+                  </View>
+                  {active && (
+                    <SymbolView
+                      name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                      size={14}
+                      tintColor="#03a84e"
+                    />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Language */}
-        <View style={styles.panel}>
-          <ThemedText style={styles.sectionTitle}>{t('settings_section_lang')}</ThemedText>
-          <View style={styles.divider} />
+        <View style={[styles.panel, isLight && styles.panelLight]}>
+          <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_lang')}</ThemedText>
+          <View style={[styles.divider, isLight && styles.dividerLight]} />
           <View style={styles.langOptions}>
             {langOptions.map(opt => (
               <Pressable
@@ -299,6 +352,7 @@ export default function SettingsScreen() {
                 onPress={() => setLang(opt.key)}
                 style={({ pressed }) => [
                   styles.langOption,
+                  isLight && styles.langOptionLight,
                   savedLang === opt.key && styles.langOptionActive,
                   pressed && styles.pressed,
                 ]}>
@@ -318,8 +372,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* Quick replies */}
-        <View style={styles.panel}>
-          <ThemedText style={styles.sectionTitle}>{t('settings_section_quick_replies')}</ThemedText>
+        <View style={[styles.panel, isLight && styles.panelLight]}>
+          <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_quick_replies')}</ThemedText>
           <View style={styles.headerActions}>
             <Pressable onPress={resetQuickReplies} style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}>
               <Text style={styles.resetButtonText}>{t('settings_quick_replies_reset')}</Text>
@@ -329,7 +383,7 @@ export default function SettingsScreen() {
               <Text style={styles.addButtonText}>{t('settings_quick_replies_add')}</Text>
             </Pressable>
           </View>
-          <View style={styles.divider} />
+          <View style={[styles.divider, isLight && styles.dividerLight]} />
           <SettingRow
             icon={{ ios: 'text.bubble.fill', android: 'quickreply', web: 'quickreply' }}
             iconBg="#0f6eff"
@@ -342,15 +396,15 @@ export default function SettingsScreen() {
             {quickReplies.map((reply, index) => {
               const expanded = expandedQuickReplyId === reply.id;
               return (
-                <View key={reply.id} style={[styles.quickReplyDropdown, expanded && styles.quickReplyDropdownOpen]}>
+                <View key={reply.id} style={[styles.quickReplyDropdown, isLight && styles.quickReplyDropdownLight, expanded && styles.quickReplyDropdownOpen]}>
                   <Pressable
                     onPress={() => setExpandedQuickReplyId(expanded ? null : reply.id)}
                     style={({ pressed }) => [styles.quickReplyDropdownHeader, pressed && styles.pressed]}>
                     <View style={styles.quickReplyHeaderLeft}>
                       <Text style={styles.quickReplyNumber}>{index + 1}</Text>
                       <View style={styles.quickReplyHeaderCopy}>
-                        <Text style={styles.quickReplyTitle} numberOfLines={1}>{reply.label}</Text>
-                        <Text style={styles.quickReplyPreview} numberOfLines={1}>{reply.value}</Text>
+                        <Text style={[styles.quickReplyTitle, isLight && styles.quickReplyTitleLight]} numberOfLines={1}>{reply.label}</Text>
+                        <Text style={[styles.quickReplyPreview, isLight && styles.quickReplyPreviewLight]} numberOfLines={1}>{reply.value}</Text>
                       </View>
                     </View>
                     <SymbolView
@@ -362,7 +416,7 @@ export default function SettingsScreen() {
                   {expanded && (
                     <View style={styles.quickReplyFields}>
                       <View style={styles.quickReplyEditHeader}>
-                        <Text style={styles.quickReplyEditTitle}>{t('settings_quick_replies_message_label')}</Text>
+                        <Text style={[styles.quickReplyEditTitle, isLight && styles.quickReplyEditTitleLight]}>{t('settings_quick_replies_message_label')}</Text>
                         <Pressable
                           onPress={() => removeQuickReply(reply.id)}
                           style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}>
@@ -370,20 +424,20 @@ export default function SettingsScreen() {
                           <Text style={styles.removeButtonText}>{t('settings_quick_replies_remove')}</Text>
                         </Pressable>
                       </View>
-                      <Text style={styles.inputLabel}>{t('settings_quick_replies_chip_label')}</Text>
+                      <Text style={[styles.inputLabel, isLight && styles.inputLabelLight]}>{t('settings_quick_replies_chip_label')}</Text>
                       <TextInput
                         value={reply.label}
                         onChangeText={(value) => updateQuickReply(reply.id, 'label', value)}
                         placeholderTextColor="#52657f"
-                        style={styles.quickReplyInput}
+                        style={[styles.quickReplyInput, isLight && styles.quickReplyInputLight]}
                       />
-                      <Text style={styles.inputLabel}>{t('settings_quick_replies_message_label')}</Text>
+                      <Text style={[styles.inputLabel, isLight && styles.inputLabelLight]}>{t('settings_quick_replies_message_label')}</Text>
                       <TextInput
                         multiline
                         value={reply.value}
                         onChangeText={(value) => updateQuickReply(reply.id, 'value', value)}
                         placeholderTextColor="#52657f"
-                        style={[styles.quickReplyInput, styles.quickReplyMessageInput]}
+                        style={[styles.quickReplyInput, isLight && styles.quickReplyInputLight, styles.quickReplyMessageInput]}
                       />
                     </View>
                   )}
@@ -395,52 +449,98 @@ export default function SettingsScreen() {
 
         {/* Chatbots */}
         {(loadingWidgets || allWidgets.length > 0) && (
-          <View style={styles.panel}>
-            <ThemedText style={styles.sectionTitle}>Chatbots</ThemedText>
-            <View style={styles.divider} />
+          <View style={[styles.panel, isLight && styles.panelLight]}>
+            <View style={styles.chatbotSectionHeader}>
+              <View>
+                <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>Inbox chatbot</ThemedText>
+                <ThemedText style={[styles.chatbotSectionLead, isLight && styles.chatbotSectionLeadLight]}>
+                  Choose which chatbot the admin inbox should show.
+                </ThemedText>
+              </View>
+              <View style={[styles.chatbotActivePill, isLight && styles.chatbotActivePillLight]}>
+                <Text style={[styles.chatbotActivePillText, isLight && styles.chatbotActivePillTextLight]}>
+                  {defaultWidgetKey ? 'Focused' : 'All'}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.divider, isLight && styles.dividerLight]} />
             {loadingWidgets ? (
               <ActivityIndicator color="#0f6eff" style={{ paddingVertical: 14 }} />
             ) : (
-              allWidgets.map((w) => {
-                const isDefault = defaultWidgetKey === w.key;
-                return (
+              <View style={styles.chatbotChoiceList}>
+                <Pressable
+                  onPress={() => setDefaultWidget('')}
+                  style={({ pressed }) => [
+                    styles.chatbotChoice,
+                    isLight && styles.chatbotChoiceLight,
+                    !defaultWidgetKey && styles.chatbotChoiceActive,
+                    pressed && styles.pressed,
+                  ]}>
+                  <View style={[styles.chatbotChoiceIcon, { backgroundColor: '#0f6eff' }]}>
+                    <SymbolView
+                      name={{ ios: 'square.grid.2x2.fill', android: 'grid_view', web: 'grid_view' }}
+                      size={18}
+                      tintColor="#ffffff"
+                    />
+                  </View>
+                  <View style={styles.settingContent}>
+                    <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>All chatbots</Text>
+                    <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>
+                      Show every support conversation in one inbox.
+                    </Text>
+                  </View>
+                  {!defaultWidgetKey && (
+                    <View style={styles.chatbotCheck}>
+                      <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={14} tintColor="#ffffff" />
+                    </View>
+                  )}
+                </Pressable>
+
+                {allWidgets.map((w) => {
+                  const isDefault = defaultWidgetKey === w.key;
+                  return (
                   <Pressable
                     key={w.key}
                     onPress={() => setDefaultWidget(w.key)}
-                    style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
-                    <View style={[styles.settingIcon, { backgroundColor: isDefault ? '#03a84e' : '#7c3aed' }]}>
+                    style={({ pressed }) => [
+                      styles.chatbotChoice,
+                      isLight && styles.chatbotChoiceLight,
+                      isDefault && styles.chatbotChoiceActive,
+                      pressed && styles.pressed,
+                    ]}>
+                    <View style={[styles.chatbotChoiceIcon, { backgroundColor: isDefault ? '#03a84e' : '#7c3aed' }]}>
                       <SymbolView
                         name={{ ios: 'bubble.left.fill', android: 'chat_bubble', web: 'chat_bubble' }}
-                        size={20}
+                        size={18}
                         tintColor="#ffffff"
                       />
                     </View>
                     <View style={styles.settingContent}>
-                      <ThemedText style={styles.settingLabel}>{w.name}</ThemedText>
-                      <ThemedText style={styles.settingDescription}>{w.businessName}</ThemedText>
+                      <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>{w.name}</Text>
+                      <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>{w.businessName}</Text>
                     </View>
                     {isDefault && (
-                      <View style={styles.defaultBadge}>
+                      <View style={styles.chatbotCheck}>
                         <SymbolView
-                          name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                          name={{ ios: 'checkmark', android: 'check', web: 'check' }}
                           size={14}
-                          tintColor="#03a84e"
+                          tintColor="#ffffff"
                         />
-                        <Text style={styles.defaultBadgeText}>Default</Text>
                       </View>
                     )}
                   </Pressable>
-                );
-              })
+                  );
+                })}
+              </View>
             )}
           </View>
         )}
 
         {/* Account */}
         {user ? (
-          <View style={styles.panel}>
-            <ThemedText style={styles.sectionTitle}>{t('settings_section_account')}</ThemedText>
-            <View style={styles.divider} />
+          <View style={[styles.panel, isLight && styles.panelLight]}>
+            <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_account')}</ThemedText>
+            <View style={[styles.divider, isLight && styles.dividerLight]} />
             <View style={styles.accountInfo}>
               <View style={styles.accountAvatar}>
                 <ThemedText style={styles.avatarText}>
@@ -448,11 +548,11 @@ export default function SettingsScreen() {
                 </ThemedText>
               </View>
               <View>
-                <ThemedText style={styles.accountName}>{user.displayName || t('settings_agent_name')}</ThemedText>
-                <ThemedText style={styles.accountEmail}>{user.email}</ThemedText>
+                <ThemedText style={[styles.accountName, isLight && styles.accountNameLight]}>{user.displayName || t('settings_agent_name')}</ThemedText>
+                <ThemedText style={[styles.accountEmail, isLight && styles.accountEmailLight]}>{user.email}</ThemedText>
               </View>
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, isLight && styles.dividerLight]} />
             <Pressable
               onPress={handleSignOut}
               style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
@@ -461,7 +561,7 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.settingContent}>
                 <ThemedText style={styles.logoutText}>{t('settings_sign_out')}</ThemedText>
-                <ThemedText style={styles.settingDescription}>{t('settings_sign_out_desc')}</ThemedText>
+                <ThemedText style={[styles.settingDescription, isLight && styles.settingDescriptionLight]}>{t('settings_sign_out_desc')}</ThemedText>
               </View>
             </Pressable>
           </View>
@@ -477,6 +577,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#06111f',
   },
+  containerLight: {
+    backgroundColor: '#f4f8fc',
+  },
   background: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
@@ -490,6 +593,9 @@ const styles = StyleSheet.create({
     borderRadius: 42,
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
+  topBandLight: {
+    backgroundColor: 'rgba(15,110,255,0.08)',
+  },
   bottomBand: {
     position: 'absolute',
     right: -220,
@@ -498,6 +604,9 @@ const styles = StyleSheet.create({
     height: 210,
     borderRadius: 52,
     backgroundColor: 'rgba(3,168,78,0.12)',
+  },
+  bottomBandLight: {
+    backgroundColor: 'rgba(3,168,78,0.10)',
   },
   content: {
     flexGrow: 1,
@@ -522,12 +631,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.three,
   },
+  iconBoxLight: {
+    backgroundColor: '#0f6eff',
+    borderColor: '#8db8ff',
+  },
   title: {
     color: '#ffffff',
     fontSize: 44,
     lineHeight: 50,
     fontWeight: '900',
     textAlign: 'center',
+  },
+  titleLight: {
+    color: '#0f172a',
   },
   titleCompact: {
     fontSize: 34,
@@ -542,6 +658,9 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     marginTop: Spacing.two,
   },
+  leadLight: {
+    color: '#475569',
+  },
   panel: {
     borderRadius: 24,
     padding: Spacing.four,
@@ -550,12 +669,23 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     gap: Spacing.three,
   },
+  panelLight: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderColor: '#dce7f3',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+  },
   sectionTitle: {
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '900',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
+  },
+  sectionTitleLight: {
+    color: '#0f172a',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -590,11 +720,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  settingLabelLight: {
+    color: '#0f172a',
+  },
   settingDescription: {
     color: '#9fb1ce',
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
+  },
+  settingDescriptionLight: {
+    color: '#64748b',
   },
   accountInfo: {
     flexDirection: 'row',
@@ -620,16 +756,25 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
+  accountNameLight: {
+    color: '#0f172a',
+  },
   accountEmail: {
     color: '#9fb1ce',
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
   },
+  accountEmailLight: {
+    color: '#64748b',
+  },
   divider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.08)',
     marginVertical: Spacing.one,
+  },
+  dividerLight: {
+    backgroundColor: '#dce7f3',
   },
   actionRow: {
     flexDirection: 'row',
@@ -658,6 +803,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.07)',
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
+  langOptionLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce7f3',
+  },
   langOptionActive: {
     borderColor: 'rgba(3,168,78,0.35)',
     backgroundColor: 'rgba(3,168,78,0.08)',
@@ -669,6 +818,11 @@ const styles = StyleSheet.create({
   },
   langOptionTextActive: {
     color: '#ffffff',
+  },
+  themeOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   resetButton: {
     minHeight: 34,
@@ -712,6 +866,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.07)',
     overflow: 'hidden',
   },
+  quickReplyDropdownLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce7f3',
+  },
   quickReplyDropdownOpen: {
     backgroundColor: 'rgba(15,110,255,0.055)',
     borderColor: 'rgba(15,110,255,0.2)',
@@ -754,11 +912,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  quickReplyTitleLight: {
+    color: '#0f172a',
+  },
   quickReplyPreview: {
     color: '#7d91ae',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  quickReplyPreviewLight: {
+    color: '#64748b',
   },
   quickReplyFields: {
     gap: 7,
@@ -776,6 +940,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '900',
+  },
+  quickReplyEditTitleLight: {
+    color: '#0f172a',
   },
   removeButton: {
     minHeight: 30,
@@ -801,6 +968,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0,
   },
+  inputLabelLight: {
+    color: '#64748b',
+  },
   quickReplyInput: {
     minHeight: 42,
     borderRadius: 12,
@@ -813,10 +983,110 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  quickReplyInputLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#d7e2ef',
+    color: '#0f172a',
+  },
   quickReplyMessageInput: {
     minHeight: 76,
     lineHeight: 20,
     textAlignVertical: 'top',
+  },
+  chatbotSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  chatbotSectionLead: {
+    color: '#9fb1ce',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    marginTop: 6,
+    maxWidth: 360,
+  },
+  chatbotSectionLeadLight: {
+    color: '#64748b',
+  },
+  chatbotActivePill: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,110,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,110,255,0.28)',
+  },
+  chatbotActivePillLight: {
+    backgroundColor: '#e8f1ff',
+    borderColor: '#b8d2ff',
+  },
+  chatbotActivePillText: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  chatbotActivePillTextLight: {
+    color: '#0f4ca5',
+  },
+  chatbotChoiceList: {
+    gap: 10,
+  },
+  chatbotChoice: {
+    minHeight: 74,
+    borderRadius: 18,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chatbotChoiceLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dce7f3',
+  },
+  chatbotChoiceActive: {
+    borderColor: '#0f6eff',
+    backgroundColor: 'rgba(15,110,255,0.10)',
+  },
+  chatbotChoiceIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatbotChoiceTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  chatbotChoiceTitleLight: {
+    color: '#0f172a',
+  },
+  chatbotChoiceMeta: {
+    color: '#9fb1ce',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  chatbotChoiceMetaLight: {
+    color: '#64748b',
+  },
+  chatbotCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f6eff',
   },
   defaultBadge: {
     flexDirection: 'row',
