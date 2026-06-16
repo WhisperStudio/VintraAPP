@@ -322,9 +322,9 @@ export default function SettingsScreen() {
                     <SymbolView
                       name={opt.icon}
                       size={16}
-                      tintColor={active ? '#03a84e' : '#9fb1ce'}
+                      tintColor={active ? '#03a84e' : isLight ? '#64748b' : '#9fb1ce'}
                     />
-                    <Text style={[styles.langOptionText, active && styles.langOptionTextActive]}>
+                    <Text style={[styles.langOptionText, isLight && styles.langOptionTextLight, active && styles.langOptionTextActive, active && isLight && styles.langOptionTextActiveLight]}>
                       {opt.label()}
                     </Text>
                   </View>
@@ -356,7 +356,7 @@ export default function SettingsScreen() {
                   savedLang === opt.key && styles.langOptionActive,
                   pressed && styles.pressed,
                 ]}>
-                <Text style={[styles.langOptionText, savedLang === opt.key && styles.langOptionTextActive]}>
+                <Text style={[styles.langOptionText, isLight && styles.langOptionTextLight, savedLang === opt.key && styles.langOptionTextActive, savedLang === opt.key && isLight && styles.langOptionTextActiveLight]}>
                   {opt.label()}
                 </Text>
                 {savedLang === opt.key && (
@@ -376,7 +376,7 @@ export default function SettingsScreen() {
           <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_quick_replies')}</ThemedText>
           <View style={styles.headerActions}>
             <Pressable onPress={resetQuickReplies} style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}>
-              <Text style={styles.resetButtonText}>{t('settings_quick_replies_reset')}</Text>
+              <Text style={[styles.resetButtonText, isLight && styles.resetButtonTextLight]}>{t('settings_quick_replies_reset')}</Text>
             </Pressable>
             <Pressable onPress={addQuickReply} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
               <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor="#ffffff" />
@@ -457,11 +457,6 @@ export default function SettingsScreen() {
                   Choose which chatbot the admin inbox should show.
                 </ThemedText>
               </View>
-              <View style={[styles.chatbotActivePill, isLight && styles.chatbotActivePillLight]}>
-                <Text style={[styles.chatbotActivePillText, isLight && styles.chatbotActivePillTextLight]}>
-                  {defaultWidgetKey ? 'Focused' : 'All'}
-                </Text>
-              </View>
             </View>
             <View style={[styles.divider, isLight && styles.dividerLight]} />
             {loadingWidgets ? (
@@ -474,6 +469,7 @@ export default function SettingsScreen() {
                     styles.chatbotChoice,
                     isLight && styles.chatbotChoiceLight,
                     !defaultWidgetKey && styles.chatbotChoiceActive,
+                    !defaultWidgetKey && isLight && styles.chatbotChoiceActiveLight,
                     pressed && styles.pressed,
                   ]}>
                   <View style={[styles.chatbotChoiceIcon, { backgroundColor: '#0f6eff' }]}>
@@ -484,7 +480,12 @@ export default function SettingsScreen() {
                     />
                   </View>
                   <View style={styles.settingContent}>
-                    <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>All chatbots</Text>
+                    <View style={styles.chatbotChoiceTitleRow}>
+                      <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>All chatbots</Text>
+                      {!defaultWidgetKey && (
+                        <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>Active</Text>
+                      )}
+                    </View>
                     <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>
                       Show every support conversation in one inbox.
                     </Text>
@@ -506,6 +507,7 @@ export default function SettingsScreen() {
                       styles.chatbotChoice,
                       isLight && styles.chatbotChoiceLight,
                       isDefault && styles.chatbotChoiceActive,
+                      isDefault && isLight && styles.chatbotChoiceActiveLight,
                       pressed && styles.pressed,
                     ]}>
                     <View style={[styles.chatbotChoiceIcon, { backgroundColor: isDefault ? '#03a84e' : '#7c3aed' }]}>
@@ -516,7 +518,12 @@ export default function SettingsScreen() {
                       />
                     </View>
                     <View style={styles.settingContent}>
-                      <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>{w.name}</Text>
+                      <View style={styles.chatbotChoiceTitleRow}>
+                        <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>{w.name}</Text>
+                        {isDefault && (
+                          <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>Active</Text>
+                        )}
+                      </View>
                       <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>{w.businessName}</Text>
                     </View>
                     {isDefault && (
@@ -575,10 +582,10 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#06111f',
+    backgroundColor: '#101826',
   },
   containerLight: {
-    backgroundColor: '#f4f8fc',
+    backgroundColor: '#f4f7fb',
   },
   background: {
     ...StyleSheet.absoluteFillObject,
@@ -664,9 +671,9 @@ const styles = StyleSheet.create({
   panel: {
     borderRadius: 24,
     padding: Spacing.four,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#151f2f',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#263346',
     gap: Spacing.three,
   },
   panelLight: {
@@ -770,7 +777,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#263346',
     marginVertical: Spacing.one,
   },
   dividerLight: {
@@ -800,8 +807,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: '#263346',
+    backgroundColor: '#101826',
   },
   langOptionLight: {
     backgroundColor: '#ffffff',
@@ -816,8 +823,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  langOptionTextLight: {
+    color: '#334155',
+  },
   langOptionTextActive: {
     color: '#ffffff',
+  },
+  langOptionTextActiveLight: {
+    color: '#0f172a',
   },
   themeOptionLeft: {
     flexDirection: 'row',
@@ -831,14 +844,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: '#101826',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#263346',
   },
   resetButtonText: {
     color: '#9fb1ce',
     fontSize: 12,
     fontWeight: '800',
+  },
+  resetButtonTextLight: {
+    color: '#475569',
   },
   addButton: {
     minHeight: 34,
@@ -861,9 +877,9 @@ const styles = StyleSheet.create({
   },
   quickReplyDropdown: {
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: '#101826',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: '#263346',
     overflow: 'hidden',
   },
   quickReplyDropdownLight: {
@@ -976,9 +992,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: '#101826',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#263346',
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
@@ -1010,29 +1026,6 @@ const styles = StyleSheet.create({
   chatbotSectionLeadLight: {
     color: '#64748b',
   },
-  chatbotActivePill: {
-    minHeight: 30,
-    borderRadius: 15,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15,110,255,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(15,110,255,0.28)',
-  },
-  chatbotActivePillLight: {
-    backgroundColor: '#e8f1ff',
-    borderColor: '#b8d2ff',
-  },
-  chatbotActivePillText: {
-    color: '#93c5fd',
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  chatbotActivePillTextLight: {
-    color: '#0f4ca5',
-  },
   chatbotChoiceList: {
     gap: 10,
   },
@@ -1043,9 +1036,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: '#101826',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#263346',
   },
   chatbotChoiceLight: {
     backgroundColor: '#ffffff',
@@ -1054,6 +1047,10 @@ const styles = StyleSheet.create({
   chatbotChoiceActive: {
     borderColor: '#0f6eff',
     backgroundColor: 'rgba(15,110,255,0.10)',
+  },
+  chatbotChoiceActiveLight: {
+    borderColor: '#9bc0ff',
+    backgroundColor: '#f0f6ff',
   },
   chatbotChoiceIcon: {
     width: 44,
@@ -1066,9 +1063,30 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '900',
+    flexShrink: 1,
   },
   chatbotChoiceTitleLight: {
     color: '#0f172a',
+  },
+  chatbotChoiceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatbotInlineFocus: {
+    overflow: 'hidden',
+    borderRadius: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(3,168,78,0.16)',
+    color: '#86efac',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  chatbotInlineFocusLight: {
+    backgroundColor: '#dff8e8',
+    color: '#157347',
   },
   chatbotChoiceMeta: {
     color: '#9fb1ce',

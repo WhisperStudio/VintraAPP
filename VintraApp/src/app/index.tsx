@@ -64,6 +64,7 @@ import { firebaseAuth } from '@/lib/firebase';
 import { useTranslation } from '@/lib/i18n';
 import { registerPushToken, sendLocalNotification } from '@/lib/notifications';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
+import { setTabsHidden } from '@/lib/tab-visibility';
 import { useThemePreference } from '@/lib/theme-preference';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -376,6 +377,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'needs-human' | 'open' | 'ai-active'>('all');
+  const [compactSearchFocused, setCompactSearchFocused] = useState(false);
   const [quickRepliesEnabled, setQuickRepliesEnabled] = useState(true);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>(() => getDefaultQuickReplies(lang));
   const [fetchedWidgets, setFetchedWidgets] = useState<Widget[]>([]);
@@ -480,13 +483,31 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
            lastMsg.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
+  const statusFilteredChats = filteredVisibleChats.filter((chat) => {
+    if (inboxFilter === 'all') return true;
+    return chat.status === inboxFilter;
+  });
+
   const activeChats = widgetChats.filter((chat) => chat.status !== 'ai-active').length;
   const waitingChats = widgetChats.filter((chat) => chat.status === 'needs-human').length;
-  const unansweredChats = filteredVisibleChats.filter((chat) => chat.status === 'needs-human');
-  const servedChats = filteredVisibleChats.filter((chat) => chat.status !== 'needs-human');
+  const unansweredChats = statusFilteredChats.filter((chat) => chat.status === 'needs-human');
+  const servedChats = statusFilteredChats.filter((chat) => chat.status !== 'needs-human');
   const selectedChatFromList = widgetChats.find((chat) => chat.id === selectedChatId);
   const activeChat = selectedChat || selectedChatFromList || null;
-  const openChat = compact ? activeChat : (activeChat || widgetChats[0] || null);
+  const openChat = activeChat || widgetChats[0] || null;
+  const hasJoinedOpenChat = openChat?.status === 'open';
+
+  useEffect(() => {
+    if (initialSelectedChatId) {
+      setSelectedChatId(initialSelectedChatId);
+    }
+  }, [initialSelectedChatId]);
+
+  useEffect(() => {
+    if (chatOpen && !selectedChatId && widgetChats.length > 0) {
+      setSelectedChatId(widgetChats[0].id);
+    }
+  }, [chatOpen, selectedChatId, widgetChats]);
 
   useEffect(() => {
     if (openChat && messageListRef.current) {
@@ -505,6 +526,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
+    const nextChat = widgetChats.find((chat) => chat.id === chatId);
+    if (nextChat) {
+      setSelectedChat(nextChat);
+      setChatLoading(false);
+    }
     if (compact) {
       onChatSelect?.(chatId);
       setChatOpen(true);
@@ -513,6 +539,32 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
   function handleBackToList() {
     setChatOpen(false);
+  }
+
+  function resetMobileInbox() {
+    setCompactSearchFocused((current) => !current);
+    setInboxFilter('all');
+  }
+
+  function showMobileFilterMenu() {
+    Alert.alert('Filter inbox', undefined, [
+      { text: 'All', onPress: () => setInboxFilter('all') },
+      { text: 'Chats', onPress: () => setInboxFilter('open') },
+      { text: 'Needs reply', onPress: () => setInboxFilter('needs-human') },
+      { text: 'AI', onPress: () => setInboxFilter('ai-active') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  function showMobileChatMenu() {
+    if (!openChat) return;
+
+    Alert.alert(openChat.visitorName || 'Visitor', undefined, [
+      { text: openChat.status === 'open' ? 'You have joined' : 'Join and take over', onPress: () => handleStatusChange('open') },
+      { text: 'Give to AI', onPress: () => handleStatusChange('ai-active') },
+      { text: 'Resolve', style: 'destructive', onPress: handleCloseChat },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }
 
   useEffect(() => {
@@ -634,7 +686,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
       return undefined;
     }
 
-    setChatLoading(true);
+    setChatLoading(selectedChat?.id !== selectedChatId);
 
     return listenSupportChat(
       adminProfile.businessId,
@@ -648,7 +700,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         setChatLoading(false);
       },
     );
-  }, [adminProfile, selectedChatId]);
+  }, [adminProfile, selectedChatId, selectedChat?.id]);
 
   async function handleSignOut() {
     await signOut(firebaseAuth);
@@ -656,7 +708,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   }
 
   async function handleSendReply() {
-    if (!adminProfile || !openChat || sending || !reply.trim()) {
+    if (!adminProfile || !openChat || openChat.status !== 'open' || sending || !reply.trim()) {
       return;
     }
 
@@ -741,15 +793,17 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   return (
     <>
       <AdminBackground isLight={isLight} />
-      <View style={[styles.dashboard, isLight && styles.dashboardLight, compact && chatOpen && styles.dashboardCompactOpen]}>
+      <View style={[styles.dashboard, isLight && styles.dashboardLight, compact && styles.dashboardMobile, compact && isLight && styles.dashboardMobileLight, compact && chatOpen && styles.dashboardCompactOpen]}>
 
         {/* ── TOP BAR ─────────────────────────────────────── */}
         {!(compact && chatOpen) && (
           <>
-            <View style={[styles.topBar, isLight && styles.topBarLight, { paddingTop: insets.top + 4 }]}>
+            <View style={[styles.topBar, isLight && styles.topBarLight, compact && styles.mobileTopBar, compact && isLight && styles.mobileTopBarLight, { paddingTop: insets.top + 4 }]}>
               <View style={styles.topBarBrand}>
                 <View style={styles.topBarLogo}>
-                  <Text style={styles.topBarLogoV}>V</Text>
+                  <Text style={styles.topBarLogoV}>
+                    {compact ? (adminProfile.businessName || 'V').slice(0, 1).toUpperCase() : 'V'}
+                  </Text>
                 </View>
                 {allProfiles.length > 1 ? (
                   <Pressable
@@ -764,6 +818,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                       tintColor="#64748b"
                     />
                   </Pressable>
+                ) : compact ? (
+                  <Text style={[styles.mobileWorkspaceName, isLight && styles.mobileWorkspaceNameLight]} numberOfLines={1}>
+                    {adminProfile.businessName || 'VintraNordic'}
+                  </Text>
                 ) : (
                   <View>
                     <Text style={[styles.topBarName, isLight && styles.topBarNameLight]}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
@@ -775,27 +833,76 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                 )}
               </View>
 
-              <View style={styles.topBarMetrics}>
-                {waitingChats > 0 && (
-                  <View style={styles.topBarMetricUrgent}>
-                    <Text style={styles.topBarMetricUrgentNum}>{waitingChats}</Text>
-                    <Text style={styles.topBarMetricUrgentLabel}>NEW</Text>
+              {compact ? (
+                <View style={styles.mobileTopActions}>
+                  <Pressable
+                    onPress={resetMobileInbox}
+                    style={({ pressed }) => [styles.mobileIconButton, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: compactSearchFocused ? 'magnifyingglass' : 'square.grid.2x2', android: compactSearchFocused ? 'search' : 'dashboard', web: compactSearchFocused ? 'search' : 'dashboard' }} size={22} tintColor={compactSearchFocused ? '#159750' : isLight ? '#555555' : '#cbd5e1'} />
+                  </Pressable>
+                  <Pressable
+                    onPress={showMobileFilterMenu}
+                    style={({ pressed }) => [styles.mobileIconButton, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }} size={23} tintColor={isLight ? '#555555' : '#cbd5e1'} />
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.topBarMetrics}>
+                    {waitingChats > 0 && (
+                      <View style={styles.topBarMetricUrgent}>
+                        <Text style={styles.topBarMetricUrgentNum}>{waitingChats}</Text>
+                        <Text style={styles.topBarMetricUrgentLabel}>NEW</Text>
+                      </View>
+                    )}
+                    <View style={styles.topBarMetricBlue}>
+                      <Text style={styles.topBarMetricBlueNum}>{activeChats}</Text>
+                      <Text style={styles.topBarMetricBlueLabel}>OPEN</Text>
+                    </View>
+                    <View style={styles.topBarMetricGray}>
+                      <Text style={styles.topBarMetricGrayNum}>{chats.length}</Text>
+                      <Text style={styles.topBarMetricGrayLabel}>TOTAL</Text>
+                    </View>
                   </View>
-                )}
-                <View style={styles.topBarMetricBlue}>
-                  <Text style={styles.topBarMetricBlueNum}>{activeChats}</Text>
-                  <Text style={styles.topBarMetricBlueLabel}>OPEN</Text>
-                </View>
-                <View style={styles.topBarMetricGray}>
-                  <Text style={styles.topBarMetricGrayNum}>{chats.length}</Text>
-                  <Text style={styles.topBarMetricGrayLabel}>TOTAL</Text>
-                </View>
-              </View>
 
-              <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.topBarLogoutBtn, pressed && styles.pressed]}>
-                <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={16} tintColor="#475569" />
-              </Pressable>
+                  <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.topBarLogoutBtn, pressed && styles.pressed]}>
+                    <SymbolView name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }} size={16} tintColor="#475569" />
+                  </Pressable>
+                </>
+              )}
             </View>
+            {compact && (
+              <View style={[styles.mobileInboxTabs, isLight && styles.mobileInboxTabsLight]}>
+                <MobileInboxTab
+                  icon={{ ios: 'tray', android: 'inbox', web: 'inbox' }}
+                  label="All"
+                  active={inboxFilter === 'all'}
+                  badge={chats.length}
+                  onPress={() => setInboxFilter('all')}
+                />
+                <MobileInboxTab
+                  icon={{ ios: 'bubble.left', android: 'chat_bubble_outline', web: 'chat_bubble' }}
+                  label="Chats"
+                  active={inboxFilter === 'open'}
+                  badge={activeChats}
+                  onPress={() => setInboxFilter('open')}
+                />
+                <MobileInboxTab
+                  icon={{ ios: 'exclamationmark.bubble', android: 'priority_high', web: 'priority_high' }}
+                  label="Needs"
+                  active={inboxFilter === 'needs-human'}
+                  badge={waitingChats}
+                  onPress={() => setInboxFilter('needs-human')}
+                />
+                <MobileInboxTab
+                  icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                  label="AI"
+                  active={inboxFilter === 'ai-active'}
+                  badge={filteredVisibleChats.filter((chat) => chat.status === 'ai-active').length}
+                  onPress={() => setInboxFilter('ai-active')}
+                />
+              </View>
+            )}
             {accessError ? <ThemedText style={styles.inlineError}>{accessError}</ThemedText> : null}
           </>
         )}
@@ -862,15 +969,14 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
           {/* LEFT: Conversation list */}
           {(!compact || !chatOpen) && (
-            <View style={[styles.sidePanel, isLight && styles.sidePanelLight, compact && styles.sidePanelFull]}>
+            <View style={[styles.sidePanel, isLight && styles.sidePanelLight, compact && styles.sidePanelFull, compact && isLight && styles.sidePanelFullLight]}>
 
-              {/* Search */}
-              <View style={[styles.sideSearch, isLight && styles.sideSearchLight]}>
-                <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={14} tintColor="#334155" />
+              {(!compact || compactSearchFocused || searchQuery) && <View style={[styles.sideSearch, isLight && styles.sideSearchLight, compact && styles.sideSearchCompact, compact && isLight && styles.sideSearchCompactLight]}>
+                <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={compact ? 21 : 14} tintColor={compact ? (isLight ? '#8e8e93' : '#94a3b8') : '#334155'} />
                 <TextInput
-                  placeholder="…"
-                  placeholderTextColor="#334155"
-                  style={[styles.sideSearchInput, isLight && styles.sideSearchInputLight]}
+                  placeholder="Search"
+                  placeholderTextColor={compact ? (isLight ? '#5f6368' : '#94a3b8') : '#334155'}
+                  style={[styles.sideSearchInput, isLight && styles.sideSearchInputLight, compact && styles.sideSearchInputCompact, compact && isLight && styles.sideSearchInputCompactLight]}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
@@ -879,10 +985,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={14} tintColor="#334155" />
                   </Pressable>
                 ) : null}
-              </View>
+              </View>}
 
               {/* Stats row */}
-              <View style={styles.sideStats}>
+              {!compact && <View style={styles.sideStats}>
                 <View style={[styles.sideStatCard, isLight && styles.sideStatCardLight, waitingChats > 0 && styles.sideStatCardUrgent]}>
                   <Text style={[styles.sideStatNum, isLight && styles.sideStatNumLight, waitingChats > 0 && { color: '#dc2626' }]}>{waitingChats}</Text>
                   <Text style={[styles.sideStatLabel, isLight && styles.sideStatLabelLight]}>{adminT('admin_waiting')}</Text>
@@ -895,24 +1001,26 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   <Text style={[styles.sideStatNum, isLight && styles.sideStatNumLight]}>{chats.length}</Text>
                   <Text style={[styles.sideStatLabel, isLight && styles.sideStatLabelLight]}>{adminT('admin_all')}</Text>
                 </View>
-              </View>
+              </View>}
 
               {/* Chat list */}
               {chatsLoading ? (
                 <View style={styles.sideLoading}>
                   <ActivityIndicator color="#0f6eff" />
                 </View>
-              ) : !filteredVisibleChats.length ? (
+              ) : !statusFilteredChats.length ? (
                 <View style={styles.sideEmpty}>
                   <View style={styles.sideEmptyIcon}>
                     <SymbolView name={{ ios: 'tray', android: 'inbox', web: 'inbox' }} size={28} tintColor="#1e293b" />
                   </View>
                   <Text style={[styles.sideEmptyTitle, isLight && styles.sideEmptyTitleLight]}>{adminT('admin_no_conversations')}</Text>
-                  <Text style={[styles.sideEmptyText, isLight && styles.sideEmptyTextLight]}>{adminT('admin_no_conversations_sub')}</Text>
+                  <Text style={[styles.sideEmptyText, isLight && styles.sideEmptyTextLight]}>
+                    {searchQuery || inboxFilter !== 'all' ? 'Try another filter or search query.' : adminT('admin_no_conversations_sub')}
+                  </Text>
                 </View>
               ) : (
                 <ScrollView showsVerticalScrollIndicator={false} style={styles.sideList}>
-                  {unansweredChats.length > 0 && (
+                  {inboxFilter === 'all' && unansweredChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={styles.sideSectionDot} />
                       <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>NEEDS REPLY</Text>
@@ -922,16 +1030,16 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     </View>
                   )}
                   {unansweredChats.map((chat) => (
-                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} onPress={() => handleSelectChat(chat.id)} />
+                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} compact={compact} onPress={() => handleSelectChat(chat.id)} />
                   ))}
-                  {servedChats.length > 0 && (
+                  {inboxFilter === 'all' && servedChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={[styles.sideSectionDot, { backgroundColor: '#3d5a80' }]} />
                       <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>ACTIVE</Text>
                     </View>
                   )}
                   {servedChats.map((chat) => (
-                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} onPress={() => handleSelectChat(chat.id)} />
+                    <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} compact={compact} onPress={() => handleSelectChat(chat.id)} />
                   ))}
                 </ScrollView>
               )}
@@ -940,31 +1048,37 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
           {/* RIGHT: Chat area */}
           {(!compact || chatOpen) && (
-            <View style={[styles.chatArea, isLight && styles.chatAreaLight, compact && styles.chatAreaFull]}>
+            <View style={[styles.chatArea, isLight && styles.chatAreaLight, compact && styles.chatAreaFull, compact && isLight && styles.chatAreaFullLight]}>
               {openChat ? (
                 <>
                   {/* Chat top bar */}
-                  <View style={[styles.chatTopBar, isLight && styles.chatTopBarLight, compact && { paddingTop: insets.top + 8 }]}>
+                  <View style={[styles.chatTopBar, isLight && styles.chatTopBarLight, compact && styles.mobileChatTopBar, compact && isLight && styles.mobileChatTopBarLight, compact && { paddingTop: insets.top + 8 }]}>
                     {compact && (
-                      <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.chatBackBtn, pressed && styles.pressed]}>
-                        <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={20} tintColor="#94a3b8" />
+                      <Pressable onPress={handleBackToList} style={({ pressed }) => [styles.chatBackBtn, compact && styles.mobileChatCloseBtn, pressed && styles.pressed]}>
+                        <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={22} tintColor={isLight ? '#555555' : '#cbd5e1'} />
                       </Pressable>
                     )}
-                    <View style={[styles.chatTopAvatar, { backgroundColor: avatarColor(openChat.visitorName || 'V') }]}>
+                    <View style={[styles.chatTopAvatar, compact && styles.mobileChatTopAvatar, { backgroundColor: avatarColor(openChat.visitorName || 'V') }]}>
                       <Text style={styles.chatTopAvatarText}>{(openChat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
                       <View style={[styles.chatTopOnlineDot, openChat.status === 'needs-human' && { backgroundColor: '#ef4444' }]} />
                     </View>
                     <View style={styles.chatTopInfo}>
-                      <Text style={[styles.chatTopName, isLight && styles.chatTopNameLight]}>{openChat.visitorName || 'Visitor'}</Text>
-                      <Text style={[styles.chatTopMeta, isLight && styles.chatTopMetaLight]} numberOfLines={1}>
-                        {openChat.pageTitle || openChat.pageUrl || 'Website visitor'}
+                      <Text style={[styles.chatTopName, isLight && styles.chatTopNameLight, compact && styles.mobileChatTopName, compact && isLight && styles.mobileChatTopNameLight]} numberOfLines={1}>{openChat.visitorName || 'Visitor'}</Text>
+                      <Text style={[styles.chatTopMeta, isLight && styles.chatTopMetaLight, compact && styles.mobileChatTopMeta, compact && isLight && styles.mobileChatTopMetaLight]} numberOfLines={1}>
+                        {`${formatDateShort(openChat.updatedAt)} ${openChat.preview || openChat.messages.at(-1)?.text || 'No messages'} • ${openChat.messageCount} msgs`}
                       </Text>
                     </View>
-                    <StatusPill status={openChat.status} />
+                    {compact ? (
+                      <Pressable onPress={showMobileChatMenu} style={({ pressed }) => [styles.mobileChatMenuBtn, pressed && styles.pressed]}>
+                        <SymbolView name={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }} size={26} tintColor={isLight ? '#555555' : '#cbd5e1'} />
+                      </Pressable>
+                    ) : (
+                      <StatusPill status={openChat.status} />
+                    )}
                   </View>
 
                   {/* Action toolbar */}
-                  <View style={[styles.chatToolbar, isLight && styles.chatToolbarLight]}>
+                  {!compact && <View style={[styles.chatToolbar, isLight && styles.chatToolbarLight]}>
                     <View style={styles.handoffControl}>
                       <Pressable
                         disabled={sending}
@@ -972,6 +1086,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         style={({ pressed }) => [
                           styles.handoffButton,
                           isLight && styles.handoffButtonLight,
+                          compact && styles.handoffButtonCompact,
                           openChat.status === 'open' && styles.handoffButtonHumanActive,
                           openChat.status === 'needs-human' && styles.handoffButtonWaiting,
                           sending && styles.buttonDisabled,
@@ -997,6 +1112,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         style={({ pressed }) => [
                           styles.handoffButton,
                           isLight && styles.handoffButtonLight,
+                          compact && styles.handoffButtonCompact,
                           openChat.status === 'ai-active' && styles.handoffButtonAiActive,
                           sending && styles.buttonDisabled,
                           pressed && styles.pressed,
@@ -1020,17 +1136,17 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     <Pressable
                       disabled={sending}
                       onPress={handleCloseChat}
-                      style={({ pressed }) => [styles.toolBtnResolve, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                      style={({ pressed }) => [styles.toolBtnResolve, compact && styles.toolBtnResolveCompact, sending && styles.buttonDisabled, pressed && styles.pressed]}>
                       <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={13} tintColor="#22c55e" />
                       <Text style={styles.toolBtnResolveText}>Resolve</Text>
                     </Pressable>
-                  </View>
+                  </View>}
 
                   {/* Messages */}
                   <ScrollView
                     ref={messageListRef}
-                    style={[styles.msgScroll, isLight && styles.msgScrollLight]}
-                    contentContainerStyle={styles.msgScrollContent}
+                    style={[styles.msgScroll, isLight && styles.msgScrollLight, compact && styles.msgScrollCompact, compact && isLight && styles.msgScrollCompactLight]}
+                    contentContainerStyle={[styles.msgScrollContent, compact && styles.msgScrollContentCompact]}
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
@@ -1040,47 +1156,88 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         <ActivityIndicator color="#0f6eff" />
                       </View>
                     ) : (
-                      openChat.messages.map((message) => <MessageBubble key={message.id} message={message} />)
+                      openChat.messages.map((message) => <MessageBubble key={message.id} message={message} compact={compact} />)
                     )}
                   </ScrollView>
 
-                  {/* Quick replies */}
-                  {quickRepliesEnabled && quickReplies.length > 0 && (
-                    <View style={[styles.quickBar, isLight && styles.quickBarLight]}>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
-                        {quickReplies.map((item) => (
-                          <Pressable
-                            key={item.id}
-                            onPress={() => setReply(item.value)}
-                            style={({ pressed }) => [styles.quickChip, isLight && styles.quickChipLight, pressed && styles.pressed]}>
-                            <Text style={[styles.quickChipText, isLight && styles.quickChipTextLight]}>{item.label}</Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
+                  {hasJoinedOpenChat ? (
+                    <>
+                      {/* Quick replies */}
+                      {quickRepliesEnabled && quickReplies.length > 0 && (
+                        <View style={[styles.quickBar, isLight && styles.quickBarLight, compact && styles.quickBarCompact, compact && isLight && styles.quickBarCompactLight]}>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarScroll}>
+                            {quickReplies.map((item) => (
+                              <Pressable
+                                key={item.id}
+                                onPress={() => setReply(item.value)}
+                                style={({ pressed }) => [styles.quickChip, isLight && styles.quickChipLight, pressed && styles.pressed]}>
+                                <Text style={[styles.quickChipText, isLight && styles.quickChipTextLight]}>{item.label}</Text>
+                              </Pressable>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+
+                      {/* Input */}
+                      <View
+                        style={[
+                          styles.msgInputBar,
+                          isLight && styles.msgInputBarLight,
+                          compact && styles.msgInputBarCompact,
+                          compact && isLight && styles.msgInputBarCompactLight,
+                          compact && { paddingBottom: Math.max(insets.bottom + 10, 28) },
+                        ]}>
+                        <TextInput
+                          multiline
+                          scrollEnabled
+                          placeholder={adminT('admin_reply_placeholder')}
+                          placeholderTextColor={isLight ? '#94a3b8' : '#283447'}
+                          style={[styles.msgInput, isLight && styles.msgInputLight, compact && styles.msgInputCompact, compact && isLight && styles.msgInputCompactLight]}
+                          value={reply}
+                          onChangeText={setReply}
+                          onSubmitEditing={handleSendReply}
+                        />
+                        <Pressable
+                          disabled={sending || !reply.trim()}
+                          onPress={handleSendReply}
+                          style={({ pressed }) => [styles.msgSendBtn, (sending || !reply.trim()) && styles.msgSendBtnDisabled, pressed && styles.pressed]}>
+                          {sending
+                            ? <ActivityIndicator color="#ffffff" size="small" />
+                            : <SymbolView name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} size={17} tintColor="#ffffff" />}
+                        </Pressable>
+                      </View>
+                    </>
+                  ) : (
+                    <View
+                      style={[
+                        styles.joinBar,
+                        isLight && styles.joinBarLight,
+                        compact && styles.joinBarCompact,
+                        compact && { paddingBottom: Math.max(insets.bottom + 12, 30) },
+                      ]}>
+                      <View style={styles.joinCopy}>
+                        <Text style={[styles.joinTitle, isLight && styles.joinTitleLight]}>
+                          Join før du svarer
+                        </Text>
+                        <Text style={[styles.joinSub, isLight && styles.joinSubLight]} numberOfLines={2}>
+                          Trykk join for å ta over samtalen. Kunden ser at du har tatt over.
+                        </Text>
+                      </View>
+                      <Pressable
+                        disabled={sending}
+                        onPress={() => handleStatusChange('open')}
+                        style={({ pressed }) => [styles.joinButton, sending && styles.buttonDisabled, pressed && styles.pressed]}>
+                        {sending ? (
+                          <ActivityIndicator color="#ffffff" size="small" />
+                        ) : (
+                          <>
+                            <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor="#ffffff" />
+                            <Text style={styles.joinButtonText}>Join</Text>
+                          </>
+                        )}
+                      </Pressable>
                     </View>
                   )}
-
-                  {/* Input */}
-                  <View style={[styles.msgInputBar, isLight && styles.msgInputBarLight, compact && styles.msgInputBarCompact]}>
-                    <TextInput
-                      multiline
-                      scrollEnabled
-                      placeholder={adminT('admin_reply_placeholder')}
-                      placeholderTextColor={isLight ? '#94a3b8' : '#283447'}
-                      style={[styles.msgInput, isLight && styles.msgInputLight]}
-                      value={reply}
-                      onChangeText={setReply}
-                      onSubmitEditing={handleSendReply}
-                    />
-                    <Pressable
-                      disabled={sending || !reply.trim()}
-                      onPress={handleSendReply}
-                      style={({ pressed }) => [styles.msgSendBtn, (sending || !reply.trim()) && styles.msgSendBtnDisabled, pressed && styles.pressed]}>
-                      {sending
-                        ? <ActivityIndicator color="#ffffff" size="small" />
-                        : <SymbolView name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} size={17} tintColor="#ffffff" />}
-                    </Pressable>
-                  </View>
                 </>
               ) : (
                 <View style={styles.chatPlaceholder}>
@@ -1127,6 +1284,24 @@ function ConversationSection({ title, count, urgent }: { title: string; count: n
         <ThemedText style={[styles.conversationSectionBadgeText, urgent && styles.conversationSectionBadgeTextUrgent]}>{count}</ThemedText>
       </View>
     </View>
+  );
+}
+
+function MobileInboxTab({ icon, label, active, badge, onPress }: { icon: AppSymbolName; label: string; active: boolean; badge: number; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.mobileInboxTab, active && styles.mobileInboxTabActive, pressed && styles.pressed]}>
+      <View style={styles.mobileInboxTabIconWrap}>
+        <SymbolView name={icon} size={25} tintColor={active ? '#159750' : '#5f6368'} />
+        {badge > 0 && label !== 'All' ? (
+          <View style={[styles.mobileInboxTabBadge, active && styles.mobileInboxTabBadgeActive]}>
+            <Text style={styles.mobileInboxTabBadgeText}>{badge > 9 ? '9+' : badge}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={[styles.mobileInboxTabText, active && styles.mobileInboxTabTextActive]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -1182,7 +1357,7 @@ function TypewriterText({ text, style }: { text: string; style: any }) {
   return <Text style={style}>{visibleText}</Text>;
 }
 
-function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active: boolean; onPress: () => void }) {
+function ConversationRow({ chat, active, compact, onPress }: { chat: SupportChat; active: boolean; compact?: boolean; onPress: () => void }) {
   const { colorScheme } = useThemePreference();
   const isLight = colorScheme === 'light';
   const lastMessage = chat.messages.at(-1);
@@ -1190,41 +1365,62 @@ function ConversationRow({ chat, active, onPress }: { chat: SupportChat; active:
   const isAI = chat.status === 'ai-active';
   const accentColor = needsAnswer ? '#ef4444' : isAI ? '#8b5cf6' : '#0f6eff';
   const bg = avatarColor(chat.visitorName || 'V');
-  const label = needsAnswer ? 'New' : isAI ? 'AI' : 'Open';
+  const label = needsAnswer ? 'Needs reply' : isAI ? 'AI handling' : 'Open';
+  const messageLabel = `${chat.messageCount} ${chat.messageCount === 1 ? 'message' : 'messages'}`;
+  const sourceLabel = chat.pageTitle || chat.countryCode || chat.pageUrl || '';
+  const statusMeta = compact ? messageLabel : `${messageLabel}${sourceLabel ? ` • ${sourceLabel}` : ''}`;
 
   return (
     <Animated.View entering={FadeInDown.duration(280)} layout={LinearTransition.springify().damping(18)}>
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.chatRow, isLight && styles.chatRowLight, active && styles.chatRowActive, active && isLight && styles.chatRowActiveLight, needsAnswer && styles.chatRowUrgent, pressed && styles.pressed]}>
-        <View style={[styles.chatRowAccentBar, { backgroundColor: active || needsAnswer ? accentColor : 'transparent' }]} />
-        <View style={[styles.chatRowAvatar, { backgroundColor: bg }]}>
+        style={({ pressed }) => [
+          styles.chatRow,
+          isLight && styles.chatRowLight,
+          compact && styles.chatRowCompact,
+          compact && isLight && styles.chatRowCompactLight,
+          active && styles.chatRowActive,
+          active && isLight && styles.chatRowActiveLight,
+          active && compact && styles.chatRowActiveCompact,
+          active && compact && isLight && styles.chatRowActiveCompactLight,
+          needsAnswer && styles.chatRowUrgent,
+          needsAnswer && compact && styles.chatRowUrgentCompact,
+          needsAnswer && compact && isLight && styles.chatRowUrgentCompactLight,
+          pressed && styles.pressed,
+        ]}>
+        {!compact && <View style={[styles.chatRowAccentBar, { backgroundColor: active || needsAnswer ? accentColor : 'transparent' }]} />}
+        <View style={[styles.chatRowAvatar, compact && styles.chatRowAvatarCompact, { backgroundColor: bg }]}>
           <Text style={styles.chatRowAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
           <View style={[styles.chatRowStatusDot, isLight && styles.chatRowStatusDotLight, { backgroundColor: accentColor }]} />
         </View>
         <View style={styles.chatRowBody}>
           <View style={styles.chatRowTop}>
-            <Text style={[styles.chatRowName, active && styles.chatRowNameActive, isLight && styles.chatRowNameLight, active && isLight && styles.chatRowNameActiveLight]} numberOfLines={1}>
+            <Text style={[styles.chatRowName, compact && styles.chatRowNameCompact, active && styles.chatRowNameActive, isLight && styles.chatRowNameLight, active && isLight && styles.chatRowNameActiveLight, compact && isLight && styles.chatRowNameCompactLight]} numberOfLines={1}>
               {chat.visitorName || 'Visitor'}
             </Text>
-            <Text style={[styles.chatRowTime, isLight && styles.chatRowTimeLight]}>{formatTime(chat.updatedAt)}</Text>
+            <Text style={[styles.chatRowTime, isLight && styles.chatRowTimeLight, compact && styles.chatRowTimeCompact]}>{formatRelativeTime(chat.updatedAt)}</Text>
           </View>
-          <Text style={[styles.chatRowPreview, isLight && styles.chatRowPreviewLight]} numberOfLines={1}>
+          <Text style={[styles.chatRowPreview, isLight && styles.chatRowPreviewLight, compact && styles.chatRowPreviewCompact, compact && isLight && styles.chatRowPreviewCompactLight]} numberOfLines={1}>
             {lastMessage?.text || chat.preview || 'No messages yet'}
           </Text>
-          <Text style={[styles.chatRowSource, isLight && styles.chatRowSourceLight]} numberOfLines={1}>
-            {chat.pageTitle || chat.countryCode || 'vintranordic.com'}
-          </Text>
+          <View style={styles.chatRowMeta}>
+            <Text style={[styles.chatRowSource, isLight && styles.chatRowSourceLight, compact && styles.chatRowSourceCompact, compact && isLight && styles.chatRowSourceCompactLight]} numberOfLines={1}>
+              {statusMeta}
+            </Text>
+          </View>
         </View>
-        <View style={[styles.chatRowBadge, { backgroundColor: accentColor + '18', borderColor: accentColor + '45' }]}>
-          <Text style={[styles.chatRowBadgeText, { color: accentColor }]}>{label}</Text>
+        <View style={styles.chatRowRight}>
+          <View style={[styles.chatRowBadge, compact && styles.chatRowBadgeCompact, { backgroundColor: compact ? accentColor : accentColor + '18', borderColor: compact ? accentColor : accentColor + '45' }]}>
+            <Text style={[styles.chatRowBadgeText, compact && styles.chatRowBadgeTextCompact, { color: compact ? '#ffffff' : accentColor }]}>{compact && chat.status === 'ai-active' ? 'AI' : compact && chat.status === 'open' ? 'Open' : label}</Text>
+          </View>
+          {!compact && <Text style={[styles.chatRowTimestamp, isLight && styles.chatRowTimestampLight]}>{formatTime(chat.updatedAt)}</Text>}
         </View>
       </Pressable>
     </Animated.View>
   );
 }
 
-function MessageBubble({ message }: { message: SupportMessage }) {
+function MessageBubble({ message, compact }: { message: SupportMessage; compact?: boolean }) {
   const { colorScheme } = useThemePreference();
   const isLight = colorScheme === 'light';
   const fromAdmin = message.role === 'support';
@@ -1232,22 +1428,37 @@ function MessageBubble({ message }: { message: SupportMessage }) {
 
   if (fromSystem) {
     return (
-      <View style={styles.sysMsgRow}>
-        <Text style={styles.sysMsgText}>{message.text}</Text>
+      <View style={[styles.sysMsgRow, compact && styles.sysMsgRowCompact]}>
+        <Text style={[styles.sysMsgText, compact && styles.sysMsgTextCompact, compact && isLight && styles.sysMsgTextCompactLight]}>{message.text}</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.bubbleRow, fromAdmin && styles.bubbleRowAdmin]}>
+    <View style={[styles.bubbleRow, compact && styles.bubbleRowCompact, fromAdmin && styles.bubbleRowAdmin]}>
       {!fromAdmin && (
-        <View style={[styles.bubbleVisitorAvatar, isLight && styles.bubbleVisitorAvatarLight]}>
-          <Text style={[styles.bubbleVisitorAvatarText, isLight && styles.bubbleVisitorAvatarTextLight]}>V</Text>
+        <View style={[styles.bubbleVisitorAvatar, isLight && styles.bubbleVisitorAvatarLight, compact && styles.bubbleVisitorAvatarCompact, compact && isLight && styles.bubbleVisitorAvatarCompactLight]}>
+          <Text style={[styles.bubbleVisitorAvatarText, isLight && styles.bubbleVisitorAvatarTextLight, compact && styles.bubbleVisitorAvatarTextCompact, compact && isLight && styles.bubbleVisitorAvatarTextCompactLight]}>V</Text>
         </View>
       )}
-      <View style={[styles.bubble, isLight && styles.bubbleLight, fromAdmin && styles.bubbleAdmin, fromAdmin && isLight && styles.bubbleAdminLight]}>
-        <TypewriterText text={message.text} style={[styles.bubbleText, isLight && styles.bubbleTextLight, fromAdmin && styles.bubbleTextAdmin]} />
-        <Text style={[styles.bubbleTime, isLight && styles.bubbleTimeLight, fromAdmin && styles.bubbleTimeAdmin]}>{formatTime(message.createdAt)}</Text>
+      <View style={[styles.bubble, isLight && styles.bubbleLight, compact && styles.bubbleCompact, compact && isLight && styles.bubbleCompactLight, fromAdmin && styles.bubbleAdmin, fromAdmin && isLight && styles.bubbleAdminLight, fromAdmin && compact && styles.bubbleAdminCompact]}>
+        {compact ? (
+          <Text
+            style={[
+              styles.bubbleText,
+              isLight && styles.bubbleTextLight,
+              styles.bubbleTextCompact,
+              isLight && styles.bubbleTextCompactLight,
+              fromAdmin && styles.bubbleTextAdmin,
+              fromAdmin && compact && styles.bubbleTextAdminCompact,
+              fromAdmin && compact && isLight && styles.bubbleTextAdminCompactLight,
+            ]}>
+            {message.text}
+          </Text>
+        ) : (
+          <TypewriterText text={message.text} style={[styles.bubbleText, isLight && styles.bubbleTextLight, fromAdmin && styles.bubbleTextAdmin]} />
+        )}
+        <Text style={[styles.bubbleTime, isLight && styles.bubbleTimeLight, compact && styles.bubbleTimeCompact, fromAdmin && styles.bubbleTimeAdmin, fromAdmin && compact && styles.bubbleTimeAdminCompact]}>{formatTime(message.createdAt)}</Text>
       </View>
     </View>
   );
@@ -1255,6 +1466,26 @@ function MessageBubble({ message }: { message: SupportMessage }) {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatRelativeTime(date: Date) {
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function formatDateShort(date: Date) {
+  return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 export default function HomeScreen() {
@@ -1278,54 +1509,29 @@ export default function HomeScreen() {
     [insets.bottom, insets.top],
   );
 
+  useEffect(() => {
+    setTabsHidden(compact && chatOpen);
+    return () => setTabsHidden(false);
+  }, [chatOpen, compact]);
+
   if (!user) return null;
 
   return (
     <ThemedView style={[styles.container, colorScheme === 'light' && styles.containerLight]}>
       <AnimatedBackdrop />
-      {/* Normal admin list view - chat not open on mobile */}
-      {!(compact && chatOpen) && (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[styles.content, compact && styles.contentCompact]}>
-            <AdminScreen
-              user={user}
-              compact={compact}
-              chatOpen={chatOpen}
-              setChatOpen={setChatOpen}
-              onChatSelect={setSelectedChatIdForModal}
-            />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      )}
-
-      {/* Chat full-screen overlay */}
-      {compact && chatOpen && (
-        <Modal
-          visible={true}
-          animationType="slide"
-          presentationStyle="fullScreen"
-          statusBarTranslucent={true}
-          onRequestClose={() => setChatOpen(false)}>
-          <ThemedView style={[styles.container, colorScheme === 'light' && styles.containerLight]}>
-            <AnimatedBackdrop />
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              keyboardVerticalOffset={0}
-              style={styles.keyboardView}>
-              <AdminScreen
-                user={user}
-                compact={compact}
-                chatOpen={chatOpen}
-                setChatOpen={setChatOpen}
-                initialSelectedChatId={selectedChatIdForModal}
-              />
-            </KeyboardAvoidingView>
-          </ThemedView>
-        </Modal>
-      )}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+        style={styles.keyboardView}>
+        <AdminScreen
+          user={user}
+          compact={compact}
+          chatOpen={chatOpen}
+          setChatOpen={setChatOpen}
+          initialSelectedChatId={selectedChatIdForModal}
+          onChatSelect={setSelectedChatIdForModal}
+        />
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
@@ -1587,6 +1793,12 @@ const styles = StyleSheet.create({
   },
   dashboardLight: {
     backgroundColor: '#f2f6fb',
+  },
+  dashboardMobile: {
+    backgroundColor: '#101826',
+  },
+  dashboardMobileLight: {
+    backgroundColor: '#f7f7f8',
   },
   dashboardCompactOpen: {
     padding: 0,
@@ -2092,8 +2304,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.three,
   },
   widgetBadge: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2231,7 +2443,7 @@ const styles = StyleSheet.create({
   },
   noAccessText: {
     color: '#94a3b8',
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 23,
     fontWeight: '600',
     textAlign: 'center',
@@ -2981,6 +3193,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.94)',
     borderBottomColor: '#dbe7f4',
   },
+  mobileTopBar: {
+    backgroundColor: '#101826',
+    borderBottomColor: '#263346',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    gap: 12,
+  },
+  mobileTopBarLight: {
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#d2d2d7',
+  },
   topBarBrand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3001,7 +3224,83 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#0f6eff',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
+  },
+  mobileWorkspaceName: {
+    flex: 1,
+    color: '#e5edf8',
+    fontSize: 19,
+    fontWeight: '800',
+    textDecorationLine: 'underline',
+  },
+  mobileWorkspaceNameLight: {
+    color: '#575757',
+  },
+  mobileTopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  mobileIconButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileInboxTabs: {
+    height: 68,
+    flexDirection: 'row',
+    backgroundColor: '#101826',
+    borderBottomWidth: 1,
+    borderBottomColor: '#263346',
+  },
+  mobileInboxTabsLight: {
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#d2d2d7',
+  },
+  mobileInboxTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
+  },
+  mobileInboxTabActive: {
+    borderBottomColor: '#159750',
+  },
+  mobileInboxTabIconWrap: {
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileInboxTabText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mobileInboxTabTextActive: {
+    color: '#159750',
+  },
+  mobileInboxTabBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -12,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff3b45',
+  },
+  mobileInboxTabBadgeActive: {
+    backgroundColor: '#ff3b45',
+  },
+  mobileInboxTabBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   topBarName: {
     fontSize: 15,
@@ -3332,6 +3631,10 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     borderRightWidth: 0,
     flex: 1,
+    backgroundColor: '#101826',
+  },
+  sidePanelFullLight: {
+    backgroundColor: '#f7f7f8',
   },
   sideSearch: {
     flexDirection: 'row',
@@ -3357,6 +3660,17 @@ const styles = StyleSheet.create({
   },
   sideSearchInputLight: {
     color: '#0f172a',
+  },
+  sideSearchInputCompact: {
+    color: '#e5edf8',
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  sideSearchInputCompactLight: {
+    color: '#222222',
+  },
+  sideSearchCompactLight: {
+    backgroundColor: '#ececf0',
   },
   sideStats: {
     flexDirection: 'row',
@@ -3488,47 +3802,106 @@ const styles = StyleSheet.create({
   chatRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingRight: 12,
+    paddingVertical: 12,
+    paddingRight: 14,
     paddingLeft: 0,
-    marginHorizontal: 8,
-    marginVertical: 2,
-    borderRadius: 12,
-    gap: 10,
+    marginHorizontal: 10,
+    marginVertical: 4,
+    borderRadius: 18,
+    gap: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  chatRowCompact: {
+    minHeight: 88,
+    marginHorizontal: 0,
+    marginVertical: 0,
+    paddingVertical: 10,
+    paddingRight: 20,
+    paddingLeft: 20,
+    borderRadius: 0,
+    gap: 10,
+    backgroundColor: '#101826',
+    borderWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#263346',
+  },
+  chatRowCompactLight: {
+    backgroundColor: '#f7f7f8',
+    borderBottomColor: '#c8c8cc',
   },
   chatRowLight: {
-    backgroundColor: 'rgba(255,255,255,0.52)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderColor: '#deebf7',
   },
   chatRowActive: {
-    backgroundColor: 'rgba(15,110,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(15,110,255,0.2)',
+    backgroundColor: 'rgba(15,110,255,0.11)',
+    borderColor: 'rgba(15,110,255,0.28)',
   },
   chatRowActiveLight: {
-    backgroundColor: '#e8f1ff',
-    borderColor: '#9ec2ff',
+    backgroundColor: '#edf5ff',
+    borderColor: '#a7c8ff',
+  },
+  chatRowActiveCompact: {
+    backgroundColor: '#172235',
+    borderBottomColor: '#334155',
+  },
+  chatRowActiveCompactLight: {
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#bdbdc2',
   },
   chatRowUrgent: {
-    backgroundColor: 'rgba(239,68,68,0.05)',
+    backgroundColor: 'rgba(239,68,68,0.06)',
+    borderColor: 'rgba(239,68,68,0.14)',
+  },
+  chatRowUrgentCompact: {
+    backgroundColor: '#151d2c',
+    borderBottomColor: '#334155',
+  },
+  chatRowUrgentCompactLight: {
+    backgroundColor: '#fff7f7',
+    borderBottomColor: '#e5c7c7',
   },
   chatRowAccentBar: {
-    width: 3,
-    height: 44,
-    borderRadius: 2,
-    marginLeft: 4,
+    width: 4,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+    marginLeft: 6,
+  },
+  chatRowAccentDot: {
+    width: 10,
+    height: 10,
+    alignSelf: 'flex-start',
+    marginLeft: 0,
+    marginTop: 15,
+    borderRadius: 999,
   },
   chatRowAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  chatRowAvatarCompact: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   chatRowAvatarText: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '900',
     color: '#ffffff',
   },
   chatRowStatusDot: {
@@ -3546,7 +3919,8 @@ const styles = StyleSheet.create({
   },
   chatRowBody: {
     flex: 1,
-    gap: 2,
+    gap: 3,
+    minWidth: 0,
   },
   chatRowTop: {
     flexDirection: 'row',
@@ -3555,10 +3929,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   chatRowName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#94a3b8',
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#e2e8f0',
     flex: 1,
+  },
+  chatRowNameCompact: {
+    color: '#e5edf8',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
+  chatRowNameCompactLight: {
+    color: '#202124',
   },
   chatRowNameLight: {
     color: '#162033',
@@ -3570,40 +3953,285 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   chatRowTime: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#3d6090',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7ea6da',
   },
   chatRowTimeLight: {
     color: '#7a8aa0',
   },
+  chatRowTimeCompact: {
+    color: '#5f6368',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   chatRowPreview: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#64748b',
-    lineHeight: 16,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#cbd5e1',
+    lineHeight: 18,
   },
   chatRowPreviewLight: {
-    color: '#475569',
+    color: '#334155',
+  },
+  chatRowPreviewCompact: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+  chatRowPreviewCompactLight: {
+    color: '#202124',
+  },
+  chatRowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   chatRowSource: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#3d6090',
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#7c94b6',
   },
   chatRowSourceLight: {
-    color: '#8a9aaf',
+    color: '#64748b',
+  },
+  chatRowSourceCompact: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  chatRowSourceCompactLight: {
+    color: '#6f6f73',
+  },
+  chatRowRight: {
+    alignItems: 'flex-end',
+    gap: 6,
   },
   chatRowBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
     borderWidth: 1,
   },
   chatRowBadgeText: {
     fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  chatRowBadgeCompact: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  chatRowBadgeTextCompact: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+  },
+  chatRowTimestamp: {
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    color: '#64748b',
+  },
+  chatRowTimestampLight: {
+    color: '#94a3b8',
+  },
+  chatRowTimestampCompact: {
+    color: '#5f6368',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  mobileInboxHero: {
+    marginHorizontal: 10,
+    marginTop: 10,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 22,
+    backgroundColor: 'rgba(15,23,42,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  mobileInboxHeroLight: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderColor: '#dbe7f4',
+  },
+  mobileInboxHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  mobileInboxEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: '#7dd3fc',
+  },
+  mobileInboxEyebrowLight: {
+    color: '#0f6eff',
+  },
+  mobileInboxTitle: {
+    marginTop: 4,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#f8fafc',
+  },
+  mobileInboxTitleLight: {
+    color: '#0f172a',
+  },
+  mobileInboxPulse: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,197,94,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.24)',
+  },
+  mobileInboxPulseUrgent: {
+    backgroundColor: 'rgba(239,68,68,0.14)',
+    borderColor: 'rgba(239,68,68,0.3)',
+  },
+  mobileInboxPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#22c55e',
+  },
+  mobileInboxPulseDotUrgent: {
+    backgroundColor: '#ef4444',
+  },
+  mobileInboxPulseText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#86efac',
+  },
+  mobileInboxPulseTextLight: {
+    color: '#166534',
+  },
+  mobileInboxStats: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  queueStatCard: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  queueStatCardLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#deebf7',
+  },
+  queueStatCardUrgent: {
+    backgroundColor: 'rgba(239,68,68,0.09)',
+    borderColor: 'rgba(239,68,68,0.18)',
+  },
+  queueStatCardActive: {
+    backgroundColor: 'rgba(15,110,255,0.1)',
+    borderColor: 'rgba(15,110,255,0.2)',
+  },
+  queueStatValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#f8fafc',
+  },
+  queueStatValueLight: {
+    color: '#0f172a',
+  },
+  queueStatValueUrgent: {
+    color: '#f87171',
+  },
+  queueStatValueActive: {
+    color: '#60a5fa',
+  },
+  queueStatLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  queueStatLabelLight: {
+    color: '#64748b',
+  },
+  mobileInboxFilters: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    paddingRight: 4,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  filterChipLight: {
+    backgroundColor: '#f8fbff',
+    borderColor: '#deebf7',
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(15,110,255,0.16)',
+    borderColor: 'rgba(15,110,255,0.28)',
+  },
+  filterChipActiveLight: {
+    backgroundColor: '#eaf3ff',
+    borderColor: '#a7c8ff',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#cbd5e1',
+  },
+  filterChipTextLight: {
+    color: '#334155',
+  },
+  filterChipTextActive: {
+    color: '#0f6eff',
+  },
+  filterChipBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  filterChipBadgeActive: {
+    backgroundColor: '#0f6eff',
+  },
+  filterChipBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#e2e8f0',
+  },
+  filterChipBadgeTextActive: {
+    color: '#ffffff',
+  },
+  sideSearchCompact: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#1a2536',
+    borderWidth: 0,
   },
 
   /* ── CHAT AREA ────────────────────────────────────── */
@@ -3617,6 +4245,10 @@ const styles = StyleSheet.create({
   },
   chatAreaFull: {
     width: '100%',
+    backgroundColor: '#101826',
+  },
+  chatAreaFullLight: {
+    backgroundColor: '#f3f3f4',
   },
   chatTopBar: {
     flexDirection: 'row',
@@ -3632,6 +4264,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.92)',
     borderBottomColor: '#dbe7f4',
   },
+  mobileChatTopBar: {
+    minHeight: 92,
+    backgroundColor: '#101826',
+    borderBottomColor: '#263346',
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  mobileChatTopBarLight: {
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#d2d2d7',
+  },
   chatBackBtn: {
     width: 36,
     height: 36,
@@ -3642,6 +4286,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
   },
+  mobileChatCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
   chatTopAvatar: {
     width: 38,
     height: 38,
@@ -3649,6 +4300,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+  },
+  mobileChatTopAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
   },
   chatTopAvatarText: {
     fontSize: 15,
@@ -3679,6 +4335,15 @@ const styles = StyleSheet.create({
   chatTopNameLight: {
     color: '#0f172a',
   },
+  mobileChatTopName: {
+    color: '#e5edf8',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  mobileChatTopNameLight: {
+    color: '#575757',
+  },
   chatTopMeta: {
     fontSize: 11,
     fontWeight: '500',
@@ -3686,6 +4351,29 @@ const styles = StyleSheet.create({
   },
   chatTopMetaLight: {
     color: '#64748b',
+  },
+  mobileChatTopMeta: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+    backgroundColor: '#1f2937',
+    color: '#cbd5e1',
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
+  },
+  mobileChatTopMetaLight: {
+    backgroundColor: '#dedede',
+    color: '#555555',
+  },
+  mobileChatMenuBtn: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   /* ── TOOLBAR ──────────────────────────────────────── */
@@ -3702,6 +4390,12 @@ const styles = StyleSheet.create({
   chatToolbarLight: {
     backgroundColor: 'rgba(255,255,255,0.78)',
     borderBottomColor: '#dbe7f4',
+  },
+  mobileChatToolbar: {
+    backgroundColor: '#f7f7f8',
+    borderBottomColor: '#d2d2d7',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   handoffControl: {
     flex: 1,
@@ -3725,6 +4419,12 @@ const styles = StyleSheet.create({
   handoffButtonLight: {
     backgroundColor: '#ffffff',
     borderColor: '#d8e3f0',
+  },
+  handoffButtonCompact: {
+    minHeight: 42,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderColor: '#dedede',
   },
   handoffButtonHumanActive: {
     backgroundColor: '#0f6eff',
@@ -3835,6 +4535,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#22c55e',
   },
+  toolBtnResolveCompact: {
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderColor: '#dedede',
+  },
 
   /* ── MESSAGES ─────────────────────────────────────── */
   msgScroll: {
@@ -3843,10 +4548,22 @@ const styles = StyleSheet.create({
   msgScrollLight: {
     backgroundColor: 'rgba(255,255,255,0.34)',
   },
+  msgScrollCompact: {
+    backgroundColor: '#101826',
+  },
+  msgScrollCompactLight: {
+    backgroundColor: '#f3f3f4',
+  },
   msgScrollContent: {
     padding: 14,
     gap: 8,
     paddingBottom: 32,
+  },
+  msgScrollContentCompact: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 42,
+    gap: 18,
   },
   msgLoading: {
     flex: 1,
@@ -3857,6 +4574,9 @@ const styles = StyleSheet.create({
   sysMsgRow: {
     alignItems: 'center',
     paddingVertical: 6,
+  },
+  sysMsgRowCompact: {
+    alignItems: 'flex-start',
   },
   sysMsgText: {
     fontSize: 11,
@@ -3869,11 +4589,29 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
+  sysMsgTextCompact: {
+    color: '#94a3b8',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 0,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  sysMsgTextCompactLight: {
+    color: '#777777',
+  },
   bubbleRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
     maxWidth: '85%',
+  },
+  bubbleRowCompact: {
+    maxWidth: '92%',
+    gap: 10,
   },
   bubbleRowAdmin: {
     alignSelf: 'flex-end',
@@ -3891,6 +4629,19 @@ const styles = StyleSheet.create({
   bubbleVisitorAvatarLight: {
     backgroundColor: '#e8eef7',
   },
+  bubbleVisitorAvatarCompact: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginBottom: 0,
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  bubbleVisitorAvatarCompactLight: {
+    backgroundColor: '#eeeeee',
+    borderColor: '#cfcfcf',
+  },
   bubbleVisitorAvatarText: {
     fontSize: 11,
     fontWeight: '700',
@@ -3898,6 +4649,14 @@ const styles = StyleSheet.create({
   },
   bubbleVisitorAvatarTextLight: {
     color: '#475569',
+  },
+  bubbleVisitorAvatarTextCompact: {
+    color: '#94a3b8',
+    fontSize: 24,
+    fontWeight: '500',
+  },
+  bubbleVisitorAvatarTextCompactLight: {
+    color: '#9b9b9b',
   },
   bubble: {
     maxWidth: 280,
@@ -3914,6 +4673,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderColor: '#dbe7f4',
   },
+  bubbleCompact: {
+    maxWidth: 300,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderBottomLeftRadius: 8,
+    backgroundColor: '#1a2536',
+    borderColor: '#263346',
+  },
+  bubbleCompactLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#eeeeee',
+  },
   bubbleAdmin: {
     backgroundColor: 'rgba(15,110,255,0.18)',
     borderColor: 'rgba(15,110,255,0.3)',
@@ -3924,6 +4696,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f6eff',
     borderColor: '#0f6eff',
   },
+  bubbleAdminCompact: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#bbf7d0',
+    borderBottomRightRadius: 8,
+  },
   bubbleText: {
     fontSize: 14,
     fontWeight: '500',
@@ -3933,8 +4710,23 @@ const styles = StyleSheet.create({
   bubbleTextLight: {
     color: '#1e293b',
   },
+  bubbleTextCompact: {
+    color: '#e5edf8',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '400',
+  },
+  bubbleTextCompactLight: {
+    color: '#404040',
+  },
   bubbleTextAdmin: {
     color: '#e2e8f0',
+  },
+  bubbleTextAdminCompact: {
+    color: '#052e16',
+  },
+  bubbleTextAdminCompactLight: {
+    color: '#14532d',
   },
   bubbleTime: {
     fontSize: 10,
@@ -3945,8 +4737,16 @@ const styles = StyleSheet.create({
   bubbleTimeLight: {
     color: '#94a3b8',
   },
+  bubbleTimeCompact: {
+    color: '#94a3b8',
+    fontSize: 13,
+    marginTop: 3,
+  },
   bubbleTimeAdmin: {
     color: 'rgba(147,197,253,0.5)',
+  },
+  bubbleTimeAdminCompact: {
+    color: '#166534',
   },
 
   /* ── QUICK REPLIES ────────────────────────────────── */
@@ -3958,6 +4758,75 @@ const styles = StyleSheet.create({
   quickBarLight: {
     backgroundColor: 'rgba(255,255,255,0.86)',
     borderTopColor: '#dbe7f4',
+  },
+  quickBarCompact: {
+    backgroundColor: '#101826',
+    borderTopColor: '#263346',
+  },
+  quickBarCompactLight: {
+    backgroundColor: '#ffffff',
+    borderTopColor: '#d2d2d7',
+  },
+  joinBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(16,24,38,0.96)',
+  },
+  joinBarLight: {
+    backgroundColor: '#ffffff',
+    borderTopColor: '#d2dbe8',
+  },
+  joinBarCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    backgroundColor: '#101826',
+    borderTopColor: '#263346',
+  },
+  joinCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  joinTitle: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  joinTitleLight: {
+    color: '#0f172a',
+  },
+  joinSub: {
+    marginTop: 3,
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  joinSubLight: {
+    color: '#64748b',
+  },
+  joinButton: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#159750',
+    shadowColor: '#159750',
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  joinButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   quickBarScroll: {
     flexDirection: 'row',
@@ -4003,7 +4872,15 @@ const styles = StyleSheet.create({
     borderTopColor: '#dbe7f4',
   },
   msgInputBarCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
     paddingBottom: 24,
+    backgroundColor: '#101826',
+    borderTopColor: '#263346',
+  },
+  msgInputBarCompactLight: {
+    backgroundColor: '#ffffff',
+    borderTopColor: '#d2d2d7',
   },
   msgInput: {
     flex: 1,
@@ -4023,6 +4900,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fbff',
     borderColor: '#d7e2ef',
     color: '#0f172a',
+  },
+  msgInputCompact: {
+    minHeight: 42,
+    borderRadius: 8,
+    backgroundColor: '#1a2536',
+    borderColor: '#334155',
+    color: '#e5edf8',
+    fontSize: 15,
+  },
+  msgInputCompactLight: {
+    backgroundColor: '#f1f1f3',
+    borderColor: '#dddddf',
+    color: '#202124',
   },
   msgSendBtn: {
     width: 40,

@@ -73,6 +73,25 @@ export type SupportChat = {
   messages: SupportMessage[];
 };
 
+export type ChatAnalyticsTimelineEvent = {
+  id: string;
+  kind: string;
+  sessionId: string;
+  widgetKey?: string;
+  countryCode?: string;
+  createdAt: Date;
+};
+
+export type ChatAnalytics = {
+  totalMessages: number;
+  totalConversations: number;
+  totalSessions: number;
+  supportRequests: number;
+  aiOnly: number;
+  savedChats: number;
+  timeline: ChatAnalyticsTimelineEvent[];
+};
+
 const ADMIN_ROLES = new Set(['admin', 'owner', 'support']);
 
 function normalizeEmail(email?: string | null) {
@@ -160,6 +179,66 @@ function mapChat(businessId: string, id: string, data: Record<string, unknown>):
     supportRequestedAt: data.supportRequestedAt ? toDate(data.supportRequestedAt) : undefined,
     messageCount: Number(data.messageCount || messages.length),
     messages,
+  };
+}
+
+function asNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function mapTimelineEvent(value: Record<string, unknown>): ChatAnalyticsTimelineEvent {
+  return {
+    id: String(value.id || randomId()),
+    kind: String(value.kind || value.type || 'activity'),
+    sessionId: String(value.sessionId || value.chatId || value.id || ''),
+    widgetKey: value.widgetKey ? String(value.widgetKey) : undefined,
+    countryCode: value.countryCode ? String(value.countryCode).toUpperCase() : undefined,
+    createdAt: toDate(value.createdAt),
+  };
+}
+
+function mapChatAnalytics(data: Record<string, unknown>): ChatAnalytics {
+  const raw = (data.chatAnalytics || data.analytics || {}) as Record<string, unknown>;
+  const timeline = Array.isArray(raw.timeline)
+    ? raw.timeline.map((event) => mapTimelineEvent((event || {}) as Record<string, unknown>))
+    : [];
+  const uniqueTimelineSessions = new Set(timeline.map((event) => event.sessionId).filter(Boolean)).size;
+  const supportTimelineSessions = new Set(
+    timeline
+      .filter((event) => event.kind === 'support-open' || event.kind === 'support-message' || event.kind === 'support-request')
+      .map((event) => event.sessionId)
+      .filter(Boolean),
+  ).size;
+  const savedTimelineSessions = new Set(
+    timeline
+      .filter((event) => event.kind === 'support-message')
+      .map((event) => event.sessionId)
+      .filter(Boolean),
+  ).size;
+  const totalConversations = Math.max(
+    asNumber(raw.totalConversations),
+    asNumber(raw.totalSessions),
+    asNumber(raw.conversations),
+    asNumber(raw.sessions),
+    uniqueTimelineSessions,
+  );
+  const supportRequests = Math.max(
+    asNumber(raw.supportRequests),
+    asNumber(raw.supportSessions),
+    supportTimelineSessions,
+  );
+  const savedChats = Math.max(asNumber(raw.savedChats), asNumber(raw.supportAnswered), savedTimelineSessions);
+  const aiOnly = Math.max(asNumber(raw.aiOnly), asNumber(raw.aiSessions), totalConversations - supportRequests);
+
+  return {
+    totalMessages: asNumber(raw.totalMessages),
+    totalConversations,
+    totalSessions: Math.max(asNumber(raw.totalSessions), totalConversations),
+    supportRequests,
+    aiOnly,
+    savedChats,
+    timeline,
   };
 }
 
@@ -402,6 +481,20 @@ export function listenSupportChats(
   );
 }
 
+export function listenBusinessChatAnalytics(
+  businessId: string,
+  onData: (analytics: ChatAnalytics) => void,
+  onError: (error: FirestoreError) => void,
+): Unsubscribe {
+  return onSnapshot(
+    doc(firebaseDb, 'businesses', businessId),
+    (snapshot) => {
+      onData(snapshot.exists() ? mapChatAnalytics(snapshot.data()) : mapChatAnalytics({}));
+    },
+    onError,
+  );
+}
+
 export function listenSupportChat(
   businessId: string,
   chatId: string,
@@ -462,7 +555,7 @@ export async function setSupportChatStatus(businessId: string, chat: SupportChat
   const message = {
     id: randomId(),
     role: 'system',
-    text: isOpen ? 'The chat has been handed over to human support.' : 'The chat has been returned to the AI assistant.',
+    text: isOpen ? 'Du har tatt over samtalen.' : 'Samtalen er gitt tilbake til AI.',
     createdAt: new Date(),
   };
 
