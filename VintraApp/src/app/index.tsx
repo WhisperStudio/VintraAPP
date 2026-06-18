@@ -1039,12 +1039,6 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   {unansweredChats.map((chat) => (
                     <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} compact={compact} onPress={() => handleSelectChat(chat.id)} />
                   ))}
-                  {inboxFilter === 'all' && servedChats.length > 0 && (
-                    <View style={styles.sideSection}>
-                      <View style={[styles.sideSectionDot, { backgroundColor: '#3d5a80' }]} />
-                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>{adminT('admin_active_section').toUpperCase()}</Text>
-                    </View>
-                  )}
                   {servedChats.map((chat) => (
                     <ConversationRow key={chat.id} chat={chat} active={chat.id === selectedChatId} compact={compact} onPress={() => handleSelectChat(chat.id)} />
                   ))}
@@ -1399,7 +1393,6 @@ function ConversationRow({ chat, active, compact, onPress }: { chat: SupportChat
         {!compact && <View style={[styles.chatRowAccentBar, { backgroundColor: active || needsAnswer ? accentColor : 'transparent' }]} />}
         <View style={[styles.chatRowAvatar, compact && styles.chatRowAvatarCompact, { backgroundColor: bg }]}>
           <Text style={styles.chatRowAvatarText}>{(chat.visitorName || 'V').slice(0, 1).toUpperCase()}</Text>
-          <View style={[styles.chatRowStatusDot, isLight && styles.chatRowStatusDotLight, { backgroundColor: accentColor }]} />
         </View>
         <View style={styles.chatRowBody}>
           <View style={styles.chatRowTop}>
