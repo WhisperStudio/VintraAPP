@@ -54,6 +54,7 @@ import {
   listenSupportChats,
   resolveAllAdminProfiles,
   sendSupportReply,
+  setSupportTyping,
   setSupportChatStatus,
   type AdminProfile,
   type SupportChat,
@@ -375,6 +376,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
+  const [replyFocused, setReplyFocused] = useState(false);
+  const [replyInputHeight, setReplyInputHeight] = useState(0);
   const [sending, setSending] = useState(false);
   const [inboxFilter, setInboxFilter] = useState<'all' | 'needs-human' | 'open' | 'ai-active'>('all');
   const [compactSearchFocused, setCompactSearchFocused] = useState(false);
@@ -385,6 +388,9 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const messageListRef = useRef<ScrollView>(null);
   const knownLatestMessageIds = useRef<Record<string, string>>({});
   const chatNotificationsReady = useRef(false);
+  const supportTypingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supportTypingChatId = useRef<string | null>(null);
+  const supportTypingLastSentAt = useRef(0);
 
   const loadQuickReplySettings = useCallback(() => {
     let mounted = true;
@@ -499,6 +505,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const activeChat = selectedChat || selectedChatFromList || null;
   const openChat = activeChat || widgetChats[0] || null;
   const hasJoinedOpenChat = openChat?.status === 'open';
+  const replyExpanded = replyFocused || reply.trim().length > 0;
+  const replyHeight = replyExpanded
+    ? Math.min(Math.max(replyInputHeight || (compact ? 54 : 46), compact ? 54 : 46), compact ? 136 : 132)
+    : compact ? 44 : 40;
+  const visitorIsTyping = Boolean(
+    openChat?.visitorTypingAt &&
+    (openChat.status === 'needs-human' || openChat.status === 'open') &&
+    Date.now() - new Date(openChat.visitorTypingAt).getTime() < 4500,
+  );
 
   useEffect(() => {
     if (initialSelectedChatId) {
@@ -535,6 +550,23 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    if (!replyExpanded) return;
+    const timer = setTimeout(() => messageListRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(timer);
+  }, [replyExpanded, replyHeight]);
+
+  useEffect(() => {
+    return () => {
+      if (supportTypingStopTimer.current) {
+        clearTimeout(supportTypingStopTimer.current);
+      }
+      if (adminProfile?.businessId && supportTypingChatId.current) {
+        setSupportTyping(adminProfile.businessId, supportTypingChatId.current, false).catch(() => {});
+      }
+    };
+  }, [adminProfile?.businessId]);
 
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
@@ -725,12 +757,57 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     setAccessError('');
 
     try {
+      if (supportTypingStopTimer.current) {
+        clearTimeout(supportTypingStopTimer.current);
+        supportTypingStopTimer.current = null;
+      }
+      await setSupportTyping(adminProfile.businessId, openChat.id, false).catch(() => {});
       await sendSupportReply(adminProfile.businessId, openChat, reply, adminProfile);
       setReply('');
     } catch (error) {
       setAccessError(error instanceof Error ? error.message : 'Could not send reply.');
     } finally {
       setSending(false);
+    }
+  }
+
+  function handleReplyChange(text: string) {
+    setReply(text);
+
+    if (!adminProfile || !openChat || openChat.status !== 'open') {
+      return;
+    }
+
+    if (supportTypingStopTimer.current) {
+      clearTimeout(supportTypingStopTimer.current);
+      supportTypingStopTimer.current = null;
+    }
+
+    if (!text.trim()) {
+      setSupportTyping(adminProfile.businessId, openChat.id, false).catch(() => {});
+      supportTypingChatId.current = null;
+      return;
+    }
+
+    supportTypingChatId.current = openChat.id;
+    const now = Date.now();
+    if (now - supportTypingLastSentAt.current > 1200) {
+      supportTypingLastSentAt.current = now;
+      setSupportTyping(adminProfile.businessId, openChat.id, true).catch(() => {});
+    }
+    supportTypingStopTimer.current = setTimeout(() => {
+      if (!adminProfile?.businessId || supportTypingChatId.current !== openChat.id) return;
+      setSupportTyping(adminProfile.businessId, openChat.id, false).catch(() => {});
+      supportTypingChatId.current = null;
+    }, 3200);
+  }
+
+  function handleReplyBlur() {
+    setReplyFocused(false);
+    setReplyInputHeight(0);
+
+    if (adminProfile?.businessId && openChat?.id) {
+      setSupportTyping(adminProfile.businessId, openChat.id, false).catch(() => {});
     }
   }
 
@@ -1157,7 +1234,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         <ActivityIndicator color="#0f6eff" />
                       </View>
                     ) : (
-                      openChat.messages.map((message) => <MessageBubble key={message.id} message={message} compact={compact} />)
+                      <>
+                        {openChat.messages.map((message) => <MessageBubble key={message.id} message={message} compact={compact} />)}
+                        {visitorIsTyping ? <TypingBubble label={adminT('admin_visitor_typing')} compact={compact} /> : null}
+                      </>
                     )}
                   </ScrollView>
 
@@ -1185,23 +1265,42 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                           styles.msgInputBar,
                           isLight && styles.msgInputBarLight,
                           compact && styles.msgInputBarCompact,
+                          replyExpanded && styles.msgInputBarExpanded,
+                          replyExpanded && compact && styles.msgInputBarExpandedCompact,
+                          isLight && styles.msgInputBarLight,
                           compact && isLight && styles.msgInputBarCompactLight,
+                          replyExpanded && isLight && styles.msgInputBarExpandedLight,
                           compact && { paddingBottom: Math.max(insets.bottom + 10, 28) },
                         ]}>
                         <TextInput
                           multiline
                           scrollEnabled
                           placeholder={adminT('admin_reply_placeholder')}
-                          placeholderTextColor={isLight ? '#94a3b8' : '#283447'}
-                          style={[styles.msgInput, isLight && styles.msgInputLight, compact && styles.msgInputCompact, compact && isLight && styles.msgInputCompactLight]}
+                          placeholderTextColor={isLight ? '#64748b' : '#94a3b8'}
+                          textAlignVertical="top"
+                          style={[
+                            styles.msgInput,
+                            isLight && styles.msgInputLight,
+                            compact && styles.msgInputCompact,
+                            replyExpanded && styles.msgInputExpanded,
+                            replyExpanded && compact && styles.msgInputExpandedCompact,
+                            isLight && styles.msgInputLight,
+                            compact && isLight && styles.msgInputCompactLight,
+                            replyExpanded && isLight && styles.msgInputExpandedLight,
+                            replyExpanded && compact && isLight && styles.msgInputExpandedCompactLight,
+                            { height: replyHeight },
+                          ]}
                           value={reply}
-                          onChangeText={setReply}
+                          onChangeText={handleReplyChange}
+                          onFocus={() => setReplyFocused(true)}
+                          onBlur={handleReplyBlur}
+                          onContentSizeChange={(event) => setReplyInputHeight(event.nativeEvent.contentSize.height + 18)}
                           onSubmitEditing={handleSendReply}
                         />
                         <Pressable
                           disabled={sending || !reply.trim()}
                           onPress={handleSendReply}
-                          style={({ pressed }) => [styles.msgSendBtn, (sending || !reply.trim()) && styles.msgSendBtnDisabled, pressed && styles.pressed]}>
+                          style={({ pressed }) => [styles.msgSendBtn, compact && styles.msgSendBtnCompact, (sending || !reply.trim()) && styles.msgSendBtnDisabled, pressed && styles.pressed]}>
                           {sending
                             ? <ActivityIndicator color="#ffffff" size="small" />
                             : <SymbolView name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} size={17} tintColor="#ffffff" />}
@@ -1460,6 +1559,27 @@ function MessageBubble({ message, compact }: { message: SupportMessage; compact?
           <TypewriterText text={message.text} style={[styles.bubbleText, isLight && styles.bubbleTextLight, fromAdmin && styles.bubbleTextAdmin]} />
         )}
         <Text style={[styles.bubbleTime, isLight && styles.bubbleTimeLight, compact && styles.bubbleTimeCompact, fromAdmin && styles.bubbleTimeAdmin, fromAdmin && compact && styles.bubbleTimeAdminCompact]}>{formatTime(message.createdAt)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function TypingBubble({ label, compact }: { label: string; compact?: boolean }) {
+  const { colorScheme } = useThemePreference();
+  const isLight = colorScheme === 'light';
+
+  return (
+    <View style={[styles.bubbleRow, compact && styles.bubbleRowCompact, styles.typingRow]}>
+      <View style={[styles.bubbleVisitorAvatar, isLight && styles.bubbleVisitorAvatarLight, compact && styles.bubbleVisitorAvatarCompact, compact && isLight && styles.bubbleVisitorAvatarCompactLight]}>
+        <Text style={[styles.bubbleVisitorAvatarText, isLight && styles.bubbleVisitorAvatarTextLight, compact && styles.bubbleVisitorAvatarTextCompact, compact && isLight && styles.bubbleVisitorAvatarTextCompactLight]}>V</Text>
+      </View>
+      <View style={[styles.typingBubble, isLight && styles.typingBubbleLight, compact && styles.typingBubbleCompact, compact && isLight && styles.typingBubbleCompactLight]}>
+        <View style={styles.typingDots}>
+          <View style={[styles.typingDot, isLight && styles.typingDotLight]} />
+          <View style={[styles.typingDot, isLight && styles.typingDotLight]} />
+          <View style={[styles.typingDot, isLight && styles.typingDotLight]} />
+        </View>
+        <Text style={[styles.typingLabel, isLight && styles.typingLabelLight]}>{label}</Text>
       </View>
     </View>
   );
@@ -4618,6 +4738,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     flexDirection: 'row-reverse',
   },
+  typingRow: {
+    alignSelf: 'flex-start',
+  },
   bubbleVisitorAvatar: {
     width: 26,
     height: 26,
@@ -4749,6 +4872,57 @@ const styles = StyleSheet.create({
   bubbleTimeAdminCompact: {
     color: '#166534',
   },
+  typingBubble: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  typingBubbleLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe7f4',
+  },
+  typingBubbleCompact: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderBottomLeftRadius: 8,
+    backgroundColor: '#1a2536',
+    borderColor: '#263346',
+  },
+  typingBubbleCompactLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#eeeeee',
+  },
+  typingDots: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#94a3b8',
+    opacity: 0.9,
+  },
+  typingDotLight: {
+    backgroundColor: '#64748b',
+  },
+  typingLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  typingLabelLight: {
+    color: '#64748b',
+  },
 
   /* ── QUICK REPLIES ────────────────────────────────── */
   quickBar: {
@@ -4868,6 +5042,14 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.05)',
     backgroundColor: 'rgba(20,30,46,0.92)',
   },
+  msgInputBarExpanded: {
+    paddingTop: 12,
+    backgroundColor: 'rgba(16,24,38,0.98)',
+  },
+  msgInputBarExpandedLight: {
+    backgroundColor: '#ffffff',
+    borderTopColor: '#c7d7eb',
+  },
   msgInputBarLight: {
     backgroundColor: 'rgba(255,255,255,0.94)',
     borderTopColor: '#dbe7f4',
@@ -4878,6 +5060,9 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     backgroundColor: '#101826',
     borderTopColor: '#263346',
+  },
+  msgInputBarExpandedCompact: {
+    paddingTop: 14,
   },
   msgInputBarCompactLight: {
     backgroundColor: '#ffffff',
@@ -4896,6 +5081,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#e2e8f0',
+  },
+  msgInputExpanded: {
+    minHeight: 54,
+    maxHeight: 136,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderRadius: 16,
+    borderColor: 'rgba(15,110,255,0.36)',
+    backgroundColor: 'rgba(255,255,255,0.075)',
+    lineHeight: 21,
+  },
+  msgInputExpandedCompact: {
+    borderRadius: 12,
+    fontSize: 16,
+    lineHeight: 22,
+    backgroundColor: '#162235',
+    borderColor: 'rgba(96,165,250,0.52)',
+  },
+  msgInputExpandedLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#9fc3ff',
+  },
+  msgInputExpandedCompactLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#7db2ff',
   },
   msgInputLight: {
     backgroundColor: '#f8fbff',
@@ -4927,6 +5137,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 5,
+  },
+  msgSendBtnCompact: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
   },
   msgSendBtnDisabled: {
     backgroundColor: 'rgba(15,110,255,0.2)',

@@ -69,6 +69,8 @@ export type SupportChat = {
   createdAt: Date;
   updatedAt: Date;
   supportRequestedAt?: Date;
+  supportTypingAt?: Date;
+  visitorTypingAt?: Date;
   messageCount: number;
   messages: SupportMessage[];
 };
@@ -177,6 +179,8 @@ function mapChat(businessId: string, id: string, data: Record<string, unknown>):
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt),
     supportRequestedAt: data.supportRequestedAt ? toDate(data.supportRequestedAt) : undefined,
+    supportTypingAt: data.supportTypingAt ? toDate(data.supportTypingAt) : undefined,
+    visitorTypingAt: data.visitorTypingAt ? toDate(data.visitorTypingAt) : undefined,
     messageCount: Number(data.messageCount || messages.length),
     messages,
   };
@@ -535,6 +539,7 @@ export async function sendSupportReply(businessId: string, chat: SupportChat, te
   await updateDoc(doc(firebaseDb, `businesses/${businessId}/supportChats/${chat.id}`), {
     status: 'open',
     updatedAt: serverTimestamp(),
+    supportTypingAt: null,
     messages: arrayUnion(message),
     messageCount: increment(1),
   });
@@ -543,6 +548,12 @@ export async function sendSupportReply(businessId: string, chat: SupportChat, te
     'chatAnalytics.timeline': arrayUnion(timelineEvent),
     'chatAnalytics.totalMessages': increment(1),
     updatedAt: serverTimestamp(),
+  });
+}
+
+export async function setSupportTyping(businessId: string, chatId: string, isTyping: boolean) {
+  await updateDoc(doc(firebaseDb, `businesses/${businessId}/supportChats/${chatId}`), {
+    supportTypingAt: isTyping ? serverTimestamp() : null,
   });
 }
 
