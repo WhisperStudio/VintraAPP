@@ -452,9 +452,9 @@ export default function SettingsScreen() {
           <View style={[styles.panel, isLight && styles.panelLight]}>
             <View style={styles.chatbotSectionHeader}>
               <View>
-                <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>Inbox chatbot</ThemedText>
+                <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_chatbot_title')}</ThemedText>
                 <ThemedText style={[styles.chatbotSectionLead, isLight && styles.chatbotSectionLeadLight]}>
-                  Choose which chatbot the admin inbox should show.
+                  {t('settings_chatbot_desc')}
                 </ThemedText>
               </View>
             </View>
@@ -481,9 +481,9 @@ export default function SettingsScreen() {
                   </View>
                   <View style={styles.settingContent}>
                     <View style={styles.chatbotChoiceTitleRow}>
-                      <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>All chatbots</Text>
+                      <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>{t('settings_chatbot_all')}</Text>
                       {!defaultWidgetKey && (
-                        <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>Active</Text>
+                        <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>{t('settings_chatbot_active')}</Text>
                       )}
                     </View>
                     <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>
@@ -521,7 +521,7 @@ export default function SettingsScreen() {
                       <View style={styles.chatbotChoiceTitleRow}>
                         <Text style={[styles.chatbotChoiceTitle, isLight && styles.chatbotChoiceTitleLight]}>{w.name}</Text>
                         {isDefault && (
-                          <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>Active</Text>
+                          <Text style={[styles.chatbotInlineFocus, isLight && styles.chatbotInlineFocusLight]}>{t('settings_chatbot_active')}</Text>
                         )}
                       </View>
                       <Text style={[styles.chatbotChoiceMeta, isLight && styles.chatbotChoiceMetaLight]}>{w.businessName}</Text>

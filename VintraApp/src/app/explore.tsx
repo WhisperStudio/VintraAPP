@@ -93,13 +93,13 @@ function fmtDate(d: Date) {
 function AnalyticsBg({ theme }: { theme: AnalyticsTheme }) {
   const move = useSharedValue(0);
   useEffect(() => {
-    move.value = withRepeat(withTiming(1, { duration: 14000, easing: Easing.inOut(Easing.cubic) }), -1, true);
+    move.value = withRepeat(withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.cubic) }), -1, true);
   }, [move]);
   const blob1 = useAnimatedStyle(() => ({
-    transform: [{ translateX: -100 + move.value * 130 }, { translateY: -60 + move.value * 90 }],
+    transform: [{ translateX: -62 + move.value * 34 }, { translateY: -34 + move.value * 20 }],
   }));
   const blob2 = useAnimatedStyle(() => ({
-    transform: [{ translateX: 80 - move.value * 110 }, { translateY: 50 - move.value * 70 }],
+    transform: [{ translateX: 46 - move.value * 28 }, { translateY: 32 - move.value * 16 }],
   }));
   return (
     <View pointerEvents="none" style={s.bgWrap}>
@@ -131,11 +131,12 @@ function MetricCard({
 
 /* ── Segmented bar (conversation distribution) ───────────── */
 function SegmentBar({ segments, theme }: { segments: { value: number; color: string; label: string }[]; theme: AnalyticsTheme }) {
+  const { t } = useTranslation();
   const total = segments.reduce((a, sg) => a + sg.value, 0);
   if (!total) {
     return (
       <View style={s.emptyBox}>
-        <Text style={[s.emptyText, { color: theme.empty }]}>Ingen data for perioden</Text>
+        <Text style={[s.emptyText, { color: theme.empty }]}>{t('chart_no_data')}</Text>
       </View>
     );
   }
@@ -143,7 +144,7 @@ function SegmentBar({ segments, theme }: { segments: { value: number; color: str
     <View style={s.segWrap}>
       <View style={s.segTotalRow}>
         <Text style={[s.segTotalNum, { color: theme.text }]}>{total}</Text>
-        <Text style={[s.segTotalLabel, { color: theme.textSubtle }]}> samtaler totalt</Text>
+        <Text style={[s.segTotalLabel, { color: theme.textSubtle }]}> {t('total_conversations')}</Text>
       </View>
       <View style={[s.segBar, { backgroundColor: theme.track }]}>
         {segments.filter(sg => sg.value > 0).map((sg, i, arr) => (
@@ -183,6 +184,7 @@ function TimelineChart({
   days: number;
   theme: AnalyticsTheme;
 }) {
+  const { t } = useTranslation();
   const buckets = useMemo(() => {
     return Array.from({ length: days }, (_, i) => {
       const d = new Date();
@@ -226,7 +228,7 @@ function TimelineChart({
       </View>
       {buckets.every(b => b.count === 0) && (
         <View style={s.emptyBox}>
-          <Text style={[s.emptyText, { color: theme.empty }]}>Ingen aktivitet i perioden</Text>
+          <Text style={[s.emptyText, { color: theme.empty }]}>{t('chart_no_activity')}</Text>
         </View>
       )}
     </View>
@@ -448,7 +450,7 @@ export default function AnalyticsScreen() {
           {cachedAt ? (
             <View style={[s.cachedBadge, { backgroundColor: theme.control, borderColor: theme.cardBorder }]}>
               <SymbolView name={{ ios: 'clock.arrow.circlepath', android: 'history', web: 'history' }} size={11} tintColor="#64748b" />
-              <Text style={[s.cachedBadgeText, { color: theme.textSubtle }]}>Cached{'\n'}{fmtDate(cachedAt)}</Text>
+              <Text style={[s.cachedBadgeText, { color: theme.textSubtle }]}>{t('cached')}{'\n'}{fmtDate(cachedAt)}</Text>
             </View>
           ) : (
             <Text style={[s.headerUpdated, { color: theme.textSubtle }]}>{t('analyse_updated')}{'\n'}{fmtDate(now)}</Text>
@@ -504,13 +506,13 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* ── Tab bar + period ───────────────────────────────── */}
-        <View style={s.controlRow}>
-          <View style={[s.tabBar, { backgroundColor: theme.control, borderColor: theme.cardBorder }]}>
+        <View style={[s.controlRow, compact && s.controlRowCompact]}>
+          <View style={[s.tabBar, compact && s.tabBarCompact, { backgroundColor: theme.control, borderColor: theme.cardBorder }]}>
             {(['oversikt', 'tidslinje', 'geografi'] as const).map(tabKey => (
               <Pressable
                 key={tabKey}
                 onPress={() => setTab(tabKey)}
-                style={[s.tabBtn, tab === tabKey && [s.tabBtnActive, { backgroundColor: theme.controlActive }]]}>
+                style={[s.tabBtn, compact && s.tabBtnCompact, tab === tabKey && [s.tabBtnActive, { backgroundColor: theme.controlActive }]]}>
                 <SymbolView
                   name={
                     tabKey === 'oversikt'
@@ -519,19 +521,23 @@ export default function AnalyticsScreen() {
                       ? { ios: 'chart.xyaxis.line', android: 'timeline', web: 'timeline' }
                       : { ios: 'globe', android: 'public', web: 'public' }
                   }
-                  size={11}
+                  size={compact ? 14 : 13}
                   tintColor={tab === tabKey ? '#0f6eff' : theme.textSubtle}
                 />
-                <Text style={[s.tabBtnText, { color: theme.textSubtle }, tab === tabKey && s.tabBtnTextActive]}>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                  style={[s.tabBtnText, compact && s.tabBtnTextCompact, { color: theme.textSubtle }, tab === tabKey && s.tabBtnTextActive]}>
                   {tabKey === 'oversikt' ? t('tab_overview') : tabKey === 'tidslinje' ? t('tab_timeline') : t('tab_geography')}
                 </Text>
               </Pressable>
             ))}
           </View>
-          <View style={[s.periodBar, { backgroundColor: theme.control, borderColor: theme.cardBorder }]}>
+          <View style={[s.periodBar, compact && s.periodBarCompact, { backgroundColor: theme.control, borderColor: theme.cardBorder }]}>
             {(['7d', '30d', 'all'] as const).map(p => (
-              <Pressable key={p} onPress={() => setPeriod(p)} style={[s.periodBtn, period === p && [s.periodBtnActive, { backgroundColor: theme.controlActive }]]}>
-                <Text style={[s.periodBtnText, { color: theme.textSubtle }, period === p && s.periodBtnTextActive]}>
+              <Pressable key={p} onPress={() => setPeriod(p)} style={[s.periodBtn, compact && s.periodBtnCompact, period === p && [s.periodBtnActive, { backgroundColor: theme.controlActive }]]}>
+                <Text numberOfLines={1} style={[s.periodBtnText, { color: theme.textSubtle }, period === p && s.periodBtnTextActive]}>
                   {p === '7d' ? '7d' : p === '30d' ? '30d' : t('period_all')}
                 </Text>
               </Pressable>
@@ -637,30 +643,36 @@ const s = StyleSheet.create({
   metricSub: { color: '#475569', fontSize: 10, fontWeight: '500', lineHeight: 14 },
 
   /* Controls */
-  controlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  controlRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  controlRowCompact: { flexDirection: 'column', alignItems: 'stretch', gap: 8 },
   tabBar: {
     flex: 1, flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
-    padding: 3, gap: 2,
+    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    padding: 4, gap: 4,
   },
+  tabBarCompact: { flex: 0, width: '100%' },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, paddingVertical: 7, paddingHorizontal: 4, borderRadius: 9,
+    minHeight: 42, gap: 6, paddingVertical: 10, paddingHorizontal: 8, borderRadius: 12,
     borderWidth: 1, borderColor: 'transparent',
   },
+  tabBtnCompact: { minHeight: 56, flexDirection: 'column', gap: 4, paddingHorizontal: 4, paddingVertical: 8 },
   tabBtnActive: { backgroundColor: 'rgba(15,110,255,0.15)', borderColor: 'rgba(15,110,255,0.28)' },
-  tabBtnText: { color: '#475569', fontSize: 11, fontWeight: '700' },
+  tabBtnText: { color: '#475569', fontSize: 12, fontWeight: '800' },
+  tabBtnTextCompact: { fontSize: 11, textAlign: 'center' },
   tabBtnTextActive: { color: '#0f6eff' },
   periodBar: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
-    padding: 3, gap: 2,
+    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    padding: 4, gap: 4,
   },
-  periodBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 7 },
+  periodBarCompact: { width: '100%' },
+  periodBtn: { minHeight: 42, minWidth: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 11 },
+  periodBtnCompact: { flex: 1, minWidth: 0 },
   periodBtnActive: { backgroundColor: 'rgba(15,110,255,0.18)' },
-  periodBtnText: { color: '#475569', fontSize: 11, fontWeight: '700' },
+  periodBtnText: { color: '#475569', fontSize: 12, fontWeight: '800' },
   periodBtnTextActive: { color: '#0f6eff' },
 
   /* Chart cards */

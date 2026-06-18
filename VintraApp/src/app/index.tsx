@@ -85,11 +85,11 @@ function AnimatedBackdrop() {
   const pulse = useSharedValue(1);
 
   useEffect(() => {
-    drift.value = withRepeat(withTiming(1, { duration: 9000, easing: Easing.inOut(Easing.cubic) }), -1, true);
+    drift.value = withRepeat(withTiming(1, { duration: 16000, easing: Easing.inOut(Easing.cubic) }), -1, true);
     pulse.value = withRepeat(
       withSequence(
-        withTiming(1.08, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1.012, { duration: 5200, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 5200, easing: Easing.inOut(Easing.quad) }),
       ),
       -1,
       false,
@@ -98,8 +98,8 @@ function AnimatedBackdrop() {
 
   const bandOne = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -80 + drift.value * 140 },
-      { translateY: -30 + drift.value * 40 },
+      { translateX: -42 + drift.value * 38 },
+      { translateY: -18 + drift.value * 12 },
       { rotateZ: '-18deg' },
       { scale: pulse.value },
     ],
@@ -107,16 +107,16 @@ function AnimatedBackdrop() {
 
   const bandTwo = useAnimatedStyle(() => ({
     transform: [
-      { translateX: 90 - drift.value * 120 },
-      { translateY: 70 - drift.value * 50 },
+      { translateX: 52 - drift.value * 34 },
+      { translateY: 42 - drift.value * 14 },
       { rotateZ: '24deg' },
-      { scale: 1.04 },
+      { scale: 1.01 },
     ],
   }));
 
   const beam = useAnimatedStyle(() => ({
-    opacity: 0.22 + drift.value * 0.18,
-    transform: [{ translateX: -260 + drift.value * 520 }, { rotateZ: '16deg' }],
+    opacity: 0.18 + drift.value * 0.08,
+    transform: [{ translateX: -120 + drift.value * 240 }, { rotateZ: '16deg' }],
   }));
 
   return (
@@ -171,6 +171,7 @@ function AuthField({
 }
 
 export function AuthScreen({ compact }: { compact: boolean }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -182,12 +183,12 @@ export function AuthScreen({ compact }: { compact: boolean }) {
 
   async function submit() {
     if (!email.trim() || !password) {
-      Alert.alert('Missing info', 'Fill in email and password to continue.');
+      Alert.alert(t('auth_missing_info_title'), t('auth_missing_info_msg'));
       return;
     }
 
     if (isRegister && !name.trim()) {
-      Alert.alert('Missing name', 'Please enter your name before creating an account.');
+      Alert.alert(t('auth_missing_name_title'), t('auth_missing_name_msg'));
       return;
     }
 
@@ -199,22 +200,19 @@ export function AuthScreen({ compact }: { compact: boolean }) {
         await ensureVerifiedPendingUser(credentials.user, phone.trim());
         await sendEmailVerification(credentials.user).catch(() => {});
         await acceptPendingInvitationsForUser(credentials.user, phone.trim()).catch(() => 0);
-        Alert.alert(
-          'Verify your email',
-          'We sent a verification email. After verifying, sign in again and the app will connect matching invitations by email or phone.',
-        );
+        Alert.alert(t('auth_verify_title'), t('auth_verify_msg'));
       } else {
         const credentials = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
         await reload(credentials.user).catch(() => {});
         const accepted = await acceptPendingInvitationsForUser(credentials.user).catch(() => 0);
         if (accepted > 0) {
-          Alert.alert('Access activated', 'Your invitation was verified and connected to this account.');
+          Alert.alert(t('auth_access_activated_title'), t('auth_access_activated_msg'));
         }
       }
       await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not sign in at this moment.';
-      Alert.alert(isRegister ? 'Registration failed' : 'Sign in failed', message);
+      const message = error instanceof Error ? error.message : t('auth_generic_error');
+      Alert.alert(isRegister ? t('auth_registration_failed') : t('auth_sign_in_failed'), message);
     } finally {
       setBusy(false);
     }
@@ -227,27 +225,27 @@ export function AuthScreen({ compact }: { compact: boolean }) {
           <VintraMark />
           <View>
             <ThemedText style={styles.brandName}>VINTRA</ThemedText>
-            <ThemedText style={styles.brandSubline}>Support console</ThemedText>
+            <ThemedText style={styles.brandSubline}>{t('auth_support_console')}</ThemedText>
           </View>
         </View>
         <View style={styles.authCard}>
           <View style={styles.segment}>
             <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
-              <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>Sign In</ThemedText>
+              <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>{t('auth_sign_in')}</ThemedText>
             </Pressable>
             <Pressable onPress={() => setMode('register')} style={[styles.segmentButton, isRegister && styles.segmentActive]}>
-              <ThemedText style={[styles.segmentText, isRegister && styles.segmentTextActive]}>Register</ThemedText>
+              <ThemedText style={[styles.segmentText, isRegister && styles.segmentTextActive]}>{t('auth_register')}</ThemedText>
             </Pressable>
           </View>
 
-          <ThemedText style={styles.formTitle}>{isRegister ? 'Create Account' : 'Sign In'}</ThemedText>
+          <ThemedText style={styles.formTitle}>{isRegister ? t('auth_create_account') : t('auth_sign_in')}</ThemedText>
 
           <View style={styles.form}>
             {isRegister && (
               <AuthField
                 icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
                 autoComplete="name"
-                placeholder="Full name"
+                placeholder={t('auth_full_name')}
                 returnKeyType="next"
                 value={name}
                 onChangeText={setName}
@@ -257,7 +255,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
               icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
               autoComplete="email"
               keyboardType="email-address"
-              placeholder="Email"
+              placeholder={t('auth_email')}
               returnKeyType="next"
               value={email}
               onChangeText={setEmail}
@@ -266,7 +264,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
               <AuthField
                 icon={{ ios: 'phone.fill', android: 'phone', web: 'phone' }}
                 keyboardType="phone-pad"
-                placeholder="Phone for invite verification"
+                placeholder={t('auth_phone_invite')}
                 returnKeyType="next"
                 value={phone}
                 onChangeText={setPhone}
@@ -275,7 +273,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
             <AuthField
               icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
               autoComplete="password"
-              placeholder="Password"
+              placeholder={t('auth_password')}
               returnKeyType="done"
               secureTextEntry
               value={password}
@@ -292,7 +290,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
               <ActivityIndicator color="#ffffff" />
             ) : (
               <>
-                <Text style={styles.submitText}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
+                <Text style={styles.submitText}>{isRegister ? t('auth_create_account') : t('auth_sign_in')}</Text>
                 <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={19} tintColor="#ffffff" />
               </>
             )}
@@ -308,11 +306,11 @@ function AdminBackground({ isLight }: { isLight?: boolean }) {
   const pulse = useSharedValue(1);
 
   useEffect(() => {
-    move.value = withRepeat(withTiming(1, { duration: 12000, easing: Easing.inOut(Easing.cubic) }), -1, true);
+    move.value = withRepeat(withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.cubic) }), -1, true);
     pulse.value = withRepeat(
       withSequence(
-        withTiming(1.15, { duration: 4000, easing: Easing.inOut(Easing.quad) }),
-        withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1.018, { duration: 6200, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 6200, easing: Easing.inOut(Easing.quad) }),
       ),
       -1,
       false,
@@ -321,30 +319,30 @@ function AdminBackground({ isLight }: { isLight?: boolean }) {
 
   const aurora1 = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -150 + move.value * 200 },
-      { translateY: -50 + move.value * 80 },
+      { translateX: -76 + move.value * 44 },
+      { translateY: -28 + move.value * 18 },
       { rotateZ: '-12deg' },
       { scale: pulse.value },
     ],
-    opacity: 0.4 + move.value * 0.2,
+    opacity: 0.32 + move.value * 0.06,
   }));
 
   const aurora2 = useAnimatedStyle(() => ({
     transform: [
-      { translateX: 100 - move.value * 180 },
-      { translateY: 100 - move.value * 120 },
+      { translateX: 60 - move.value * 42 },
+      { translateY: 62 - move.value * 28 },
       { rotateZ: '18deg' },
-      { scale: 1.1 - move.value * 0.1 },
+      { scale: 1.02 - move.value * 0.02 },
     ],
-    opacity: 0.3 + (1 - move.value) * 0.15,
+    opacity: 0.24 + (1 - move.value) * 0.06,
   }));
 
   const aurora3 = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -80 + move.value * 120 },
-      { translateY: 200 - move.value * 150 },
+      { translateX: -44 + move.value * 28 },
+      { translateY: 130 - move.value * 34 },
       { rotateZ: '8deg' },
-      { scale: 0.9 + move.value * 0.2 },
+      { scale: 0.98 + move.value * 0.03 },
     ],
   }));
 
@@ -373,6 +371,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialSelectedChatId ?? null);
   const [selectedChat, setSelectedChat] = useState<SupportChat | null>(null);
+  const [readLatestMessageIds, setReadLatestMessageIds] = useState<Record<string, string>>({});
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [reply, setReply] = useState('');
@@ -490,6 +489,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
 
   const activeChats = widgetChats.filter((chat) => chat.status !== 'ai-active').length;
   const waitingChats = widgetChats.filter((chat) => chat.status === 'needs-human').length;
+  const unreadWaitingChats = widgetChats.filter((chat) => {
+    const latestMessageId = chat.messages.at(-1)?.id || '';
+    return chat.status === 'needs-human' && latestMessageId && readLatestMessageIds[chat.id] !== latestMessageId;
+  }).length;
   const unansweredChats = statusFilteredChats.filter((chat) => chat.status === 'needs-human');
   const servedChats = statusFilteredChats.filter((chat) => chat.status !== 'needs-human');
   const selectedChatFromList = widgetChats.find((chat) => chat.id === selectedChatId);
@@ -516,6 +519,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   }, [openChat?.id, openChat?.messages.length]);
 
   useEffect(() => {
+    if (!openChat || (compact && !chatOpen)) return;
+    const latestMessageId = openChat.messages.at(-1)?.id;
+    if (!latestMessageId) return;
+    setReadLatestMessageIds((current) => (
+      current[openChat.id] === latestMessageId ? current : { ...current, [openChat.id]: latestMessageId }
+    ));
+  }, [chatOpen, compact, openChat]);
+
+  useEffect(() => {
     const eventName = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const sub = Keyboard.addListener(eventName, () => {
       setTimeout(() => messageListRef.current?.scrollToEnd({ animated: true }), 120);
@@ -530,6 +542,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     if (nextChat) {
       setSelectedChat(nextChat);
       setChatLoading(false);
+      const latestMessageId = nextChat.messages.at(-1)?.id;
+      if (latestMessageId) {
+        setReadLatestMessageIds((current) => ({ ...current, [nextChat.id]: latestMessageId }));
+      }
     }
     if (compact) {
       onChatSelect?.(chatId);
@@ -541,29 +557,22 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     setChatOpen(false);
   }
 
-  function resetMobileInbox() {
-    setCompactSearchFocused((current) => !current);
-    setInboxFilter('all');
-  }
-
-  function showMobileFilterMenu() {
-    Alert.alert('Filter inbox', undefined, [
-      { text: 'All', onPress: () => setInboxFilter('all') },
-      { text: 'Chats', onPress: () => setInboxFilter('open') },
-      { text: 'Needs reply', onPress: () => setInboxFilter('needs-human') },
-      { text: 'AI', onPress: () => setInboxFilter('ai-active') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  function handleMobileSearchPress() {
+    setCompactSearchFocused((current) => {
+      const next = !current;
+      if (!next) setSearchQuery('');
+      return next;
+    });
   }
 
   function showMobileChatMenu() {
     if (!openChat) return;
 
-    Alert.alert(openChat.visitorName || 'Visitor', undefined, [
-      { text: openChat.status === 'open' ? 'You have joined' : 'Join and take over', onPress: () => handleStatusChange('open') },
-      { text: 'Give to AI', onPress: () => handleStatusChange('ai-active') },
-      { text: 'Resolve', style: 'destructive', onPress: handleCloseChat },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(openChat.visitorName || adminT('admin_visitor'), undefined, [
+      { text: openChat.status === 'open' ? adminT('admin_you_have_joined') : adminT('admin_join_take_over'), onPress: () => handleStatusChange('open') },
+      { text: adminT('admin_give_to_ai'), onPress: () => handleStatusChange('ai-active') },
+      { text: adminT('admin_resolve'), style: 'destructive', onPress: handleCloseChat },
+      { text: adminT('settings_cancel'), style: 'cancel' },
     ]);
   }
 
@@ -745,12 +754,12 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   function handleCloseChat() {
     if (!adminProfile || !openChat) return;
     Alert.alert(
-      'Close Conversation',
-      `Close the conversation with ${openChat.visitorName || 'visitor'}? This cannot be undone.`,
+      adminT('admin_close_conversation'),
+      adminT('admin_close_conversation_msg').replace('{name}', openChat.visitorName || adminT('admin_visitor').toLowerCase()),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: adminT('settings_cancel'), style: 'cancel' },
         {
-          text: 'Close',
+          text: adminT('admin_close'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -770,7 +779,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     return (
       <View style={styles.loadingState}>
         <ActivityIndicator color="#03a84e" size="large" />
-        <ThemedText style={styles.loadingText}>Checking access...</ThemedText>
+        <ThemedText style={styles.loadingText}>{adminT('admin_checking_access')}</ThemedText>
       </View>
     );
   }
@@ -781,10 +790,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         <View style={styles.noAccessIcon}>
           <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={24} tintColor="#ffffff" />
         </View>
-        <ThemedText style={styles.noAccessTitle}>Access Denied</ThemedText>
-        <ThemedText style={styles.noAccessText}>{accessError || 'You do not have permission to view messages yet.'}</ThemedText>
+        <ThemedText style={styles.noAccessTitle}>{adminT('admin_access_denied')}</ThemedText>
+        <ThemedText style={styles.noAccessText}>{accessError || adminT('admin_no_permission')}</ThemedText>
         <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.noAccessButton, pressed && styles.pressed]}>
-          <ThemedText style={styles.noAccessButtonText}>Sign Out</ThemedText>
+          <ThemedText style={styles.noAccessButtonText}>{adminT('admin_sign_out')}</ThemedText>
         </Pressable>
       </View>
     );
@@ -827,7 +836,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                     <Text style={[styles.topBarName, isLight && styles.topBarNameLight]}>Vintra<Text style={styles.topBarNameAccent}>Nordic</Text></Text>
                     <View style={styles.topBarLive}>
                       <View style={styles.topBarLiveDot} />
-                      <Text style={styles.topBarLiveText}>LIVE CONSOLE</Text>
+                      <Text style={styles.topBarLiveText}>{adminT('admin_live_console').toUpperCase()}</Text>
                     </View>
                   </View>
                 )}
@@ -836,32 +845,27 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               {compact ? (
                 <View style={styles.mobileTopActions}>
                   <Pressable
-                    onPress={resetMobileInbox}
+                    onPress={handleMobileSearchPress}
                     style={({ pressed }) => [styles.mobileIconButton, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: compactSearchFocused ? 'magnifyingglass' : 'square.grid.2x2', android: compactSearchFocused ? 'search' : 'dashboard', web: compactSearchFocused ? 'search' : 'dashboard' }} size={22} tintColor={compactSearchFocused ? '#159750' : isLight ? '#555555' : '#cbd5e1'} />
-                  </Pressable>
-                  <Pressable
-                    onPress={showMobileFilterMenu}
-                    style={({ pressed }) => [styles.mobileIconButton, pressed && styles.pressed]}>
-                    <SymbolView name={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }} size={23} tintColor={isLight ? '#555555' : '#cbd5e1'} />
+                    <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={23} tintColor={compactSearchFocused || searchQuery ? '#159750' : isLight ? '#555555' : '#cbd5e1'} />
                   </Pressable>
                 </View>
               ) : (
                 <>
                   <View style={styles.topBarMetrics}>
-                    {waitingChats > 0 && (
+                    {unreadWaitingChats > 0 && (
                       <View style={styles.topBarMetricUrgent}>
-                        <Text style={styles.topBarMetricUrgentNum}>{waitingChats}</Text>
-                        <Text style={styles.topBarMetricUrgentLabel}>NEW</Text>
+                        <Text style={styles.topBarMetricUrgentNum}>{unreadWaitingChats}</Text>
+                        <Text style={styles.topBarMetricUrgentLabel}>{adminT('admin_new').toUpperCase()}</Text>
                       </View>
                     )}
                     <View style={styles.topBarMetricBlue}>
                       <Text style={styles.topBarMetricBlueNum}>{activeChats}</Text>
-                      <Text style={styles.topBarMetricBlueLabel}>OPEN</Text>
+                      <Text style={styles.topBarMetricBlueLabel}>{adminT('admin_open').toUpperCase()}</Text>
                     </View>
                     <View style={styles.topBarMetricGray}>
                       <Text style={styles.topBarMetricGrayNum}>{chats.length}</Text>
-                      <Text style={styles.topBarMetricGrayLabel}>TOTAL</Text>
+                      <Text style={styles.topBarMetricGrayLabel}>{adminT('admin_total').toUpperCase()}</Text>
                     </View>
                   </View>
 
@@ -875,30 +879,33 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               <View style={[styles.mobileInboxTabs, isLight && styles.mobileInboxTabsLight]}>
                 <MobileInboxTab
                   icon={{ ios: 'tray', android: 'inbox', web: 'inbox' }}
-                  label="All"
+                  label={adminT('admin_all')}
                   active={inboxFilter === 'all'}
                   badge={chats.length}
+                  showBadge={false}
                   onPress={() => setInboxFilter('all')}
                 />
                 <MobileInboxTab
                   icon={{ ios: 'bubble.left', android: 'chat_bubble_outline', web: 'chat_bubble' }}
-                  label="Chats"
+                  label={adminT('admin_chats')}
                   active={inboxFilter === 'open'}
                   badge={activeChats}
+                  showBadge={false}
                   onPress={() => setInboxFilter('open')}
                 />
                 <MobileInboxTab
                   icon={{ ios: 'exclamationmark.bubble', android: 'priority_high', web: 'priority_high' }}
-                  label="Needs"
+                  label={adminT('admin_needs')}
                   active={inboxFilter === 'needs-human'}
-                  badge={waitingChats}
+                  badge={unreadWaitingChats}
                   onPress={() => setInboxFilter('needs-human')}
                 />
                 <MobileInboxTab
                   icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
-                  label="AI"
+                  label={adminT('status_ai')}
                   active={inboxFilter === 'ai-active'}
                   badge={filteredVisibleChats.filter((chat) => chat.status === 'ai-active').length}
+                  showBadge={false}
                   onPress={() => setInboxFilter('ai-active')}
                 />
               </View>
@@ -920,7 +927,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               <View
                 style={[styles.bizPickerCard, { marginTop: insets.top + 56 }]}
                 onStartShouldSetResponder={() => true}>
-                <Text style={styles.bizPickerTitle}>Switch workspace</Text>
+                <Text style={styles.bizPickerTitle}>{adminT('admin_switch_workspace')}</Text>
                 <View style={styles.bizPickerDivider} />
                 {allProfiles.map((p) => {
                   const isActive = adminProfile?.businessId === p.businessId;
@@ -974,7 +981,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
               {(!compact || compactSearchFocused || searchQuery) && <View style={[styles.sideSearch, isLight && styles.sideSearchLight, compact && styles.sideSearchCompact, compact && isLight && styles.sideSearchCompactLight]}>
                 <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={compact ? 21 : 14} tintColor={compact ? (isLight ? '#8e8e93' : '#94a3b8') : '#334155'} />
                 <TextInput
-                  placeholder="Search"
+                  placeholder={adminT('admin_search_short')}
                   placeholderTextColor={compact ? (isLight ? '#5f6368' : '#94a3b8') : '#334155'}
                   style={[styles.sideSearchInput, isLight && styles.sideSearchInputLight, compact && styles.sideSearchInputCompact, compact && isLight && styles.sideSearchInputCompactLight]}
                   value={searchQuery}
@@ -1015,7 +1022,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   </View>
                   <Text style={[styles.sideEmptyTitle, isLight && styles.sideEmptyTitleLight]}>{adminT('admin_no_conversations')}</Text>
                   <Text style={[styles.sideEmptyText, isLight && styles.sideEmptyTextLight]}>
-                    {searchQuery || inboxFilter !== 'all' ? 'Try another filter or search query.' : adminT('admin_no_conversations_sub')}
+                    {searchQuery || inboxFilter !== 'all' ? adminT('admin_try_another') : adminT('admin_no_conversations_sub')}
                   </Text>
                 </View>
               ) : (
@@ -1023,7 +1030,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   {inboxFilter === 'all' && unansweredChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={styles.sideSectionDot} />
-                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>NEEDS REPLY</Text>
+                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>{adminT('admin_needs_reply').toUpperCase()}</Text>
                       <View style={styles.sideSectionBadge}>
                         <Text style={styles.sideSectionBadgeText}>{unansweredChats.length}</Text>
                       </View>
@@ -1035,7 +1042,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   {inboxFilter === 'all' && servedChats.length > 0 && (
                     <View style={styles.sideSection}>
                       <View style={[styles.sideSectionDot, { backgroundColor: '#3d5a80' }]} />
-                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>ACTIVE</Text>
+                      <Text style={[styles.sideSectionText, isLight && styles.sideSectionTextLight]}>{adminT('admin_active_section').toUpperCase()}</Text>
                     </View>
                   )}
                   {servedChats.map((chat) => (
@@ -1063,9 +1070,9 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                       <View style={[styles.chatTopOnlineDot, openChat.status === 'needs-human' && { backgroundColor: '#ef4444' }]} />
                     </View>
                     <View style={styles.chatTopInfo}>
-                      <Text style={[styles.chatTopName, isLight && styles.chatTopNameLight, compact && styles.mobileChatTopName, compact && isLight && styles.mobileChatTopNameLight]} numberOfLines={1}>{openChat.visitorName || 'Visitor'}</Text>
+                      <Text style={[styles.chatTopName, isLight && styles.chatTopNameLight, compact && styles.mobileChatTopName, compact && isLight && styles.mobileChatTopNameLight]} numberOfLines={1}>{openChat.visitorName || adminT('admin_visitor')}</Text>
                       <Text style={[styles.chatTopMeta, isLight && styles.chatTopMetaLight, compact && styles.mobileChatTopMeta, compact && isLight && styles.mobileChatTopMetaLight]} numberOfLines={1}>
-                        {`${formatDateShort(openChat.updatedAt)} ${openChat.preview || openChat.messages.at(-1)?.text || 'No messages'} • ${openChat.messageCount} msgs`}
+                        {`${formatDateShort(openChat.updatedAt)} ${openChat.preview || openChat.messages.at(-1)?.text || adminT('admin_no_messages')} • ${openChat.messageCount} ${openChat.messageCount === 1 ? adminT('admin_message_one') : adminT('admin_message_other')}`}
                       </Text>
                     </View>
                     {compact ? (
@@ -1099,11 +1106,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                             tintColor={openChat.status === 'open' ? '#ffffff' : openChat.status === 'needs-human' ? (isLight ? '#dc2626' : '#fca5a5') : '#64748b'}
                           />
                           <Text style={[styles.handoffTitle, isLight && styles.handoffTitleLight, openChat.status === 'open' && styles.handoffTitleActive, openChat.status === 'needs-human' && styles.handoffTitleWaiting, openChat.status === 'needs-human' && isLight && styles.handoffTitleWaitingLight]}>
-                            {compact ? 'Human' : 'Take over'}
+                            {compact ? adminT('status_active') : adminT('admin_take_over')}
                           </Text>
                         </View>
                         <Text style={[styles.handoffSub, isLight && styles.handoffSubLight, openChat.status === 'open' && styles.handoffSubActive, openChat.status === 'needs-human' && styles.handoffSubWaiting, openChat.status === 'needs-human' && isLight && styles.handoffSubWaitingLight]} numberOfLines={1}>
-                          {openChat.status === 'open' ? 'You are handling' : openChat.status === 'needs-human' ? 'Needs reply' : 'Assign to you'}
+                          {openChat.status === 'open' ? adminT('admin_you_are_handling') : openChat.status === 'needs-human' ? adminT('admin_needs_reply') : adminT('admin_assign_to_you')}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -1124,11 +1131,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                             tintColor={openChat.status === 'ai-active' ? '#ffffff' : '#64748b'}
                           />
                           <Text style={[styles.handoffTitle, isLight && styles.handoffTitleLight, openChat.status === 'ai-active' && styles.handoffTitleActive]}>
-                            {compact ? 'AI' : 'Give to AI'}
+                            {compact ? adminT('status_ai') : adminT('admin_give_to_ai')}
                           </Text>
                         </View>
                         <Text style={[styles.handoffSub, isLight && styles.handoffSubLight, openChat.status === 'ai-active' && styles.handoffSubActive]} numberOfLines={1}>
-                          {openChat.status === 'ai-active' ? 'AI is handling' : 'Let AI answer'}
+                          {openChat.status === 'ai-active' ? adminT('admin_ai_handling') : adminT('admin_let_ai_answer')}
                         </Text>
                       </Pressable>
                     </View>
@@ -1138,7 +1145,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                       onPress={handleCloseChat}
                       style={({ pressed }) => [styles.toolBtnResolve, compact && styles.toolBtnResolveCompact, sending && styles.buttonDisabled, pressed && styles.pressed]}>
                       <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={13} tintColor="#22c55e" />
-                      <Text style={styles.toolBtnResolveText}>Resolve</Text>
+                      <Text style={styles.toolBtnResolveText}>{adminT('admin_resolve')}</Text>
                     </Pressable>
                   </View>}
 
@@ -1217,10 +1224,10 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                       ]}>
                       <View style={styles.joinCopy}>
                         <Text style={[styles.joinTitle, isLight && styles.joinTitleLight]}>
-                          Join før du svarer
+                          {adminT('admin_join_title')}
                         </Text>
                         <Text style={[styles.joinSub, isLight && styles.joinSubLight]} numberOfLines={2}>
-                          Trykk join for å ta over samtalen. Kunden ser at du har tatt over.
+                          {adminT('admin_join_sub')}
                         </Text>
                       </View>
                       <Pressable
@@ -1232,7 +1239,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                         ) : (
                           <>
                             <SymbolView name={{ ios: 'person.wave.2.fill', android: 'support_agent', web: 'support_agent' }} size={16} tintColor="#ffffff" />
-                            <Text style={styles.joinButtonText}>Join</Text>
+                            <Text style={styles.joinButtonText}>{adminT('admin_join')}</Text>
                           </>
                         )}
                       </Pressable>
@@ -1244,8 +1251,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
                   <View style={styles.chatPlaceholderIcon}>
                     <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} size={30} tintColor="#0f6eff" />
                   </View>
-                  <Text style={[styles.chatPlaceholderTitle, isLight && styles.chatPlaceholderTitleLight]}>Select a conversation</Text>
-                  <Text style={[styles.chatPlaceholderText, isLight && styles.chatPlaceholderTextLight]}>Pick a chat from the left panel to start responding to your visitors.</Text>
+                  <Text style={[styles.chatPlaceholderTitle, isLight && styles.chatPlaceholderTitleLight]}>{adminT('admin_select_conversation')}</Text>
+                  <Text style={[styles.chatPlaceholderText, isLight && styles.chatPlaceholderTextLight]}>{adminT('admin_select_conversation_sub')}</Text>
                 </View>
               )}
             </View>
@@ -1287,14 +1294,14 @@ function ConversationSection({ title, count, urgent }: { title: string; count: n
   );
 }
 
-function MobileInboxTab({ icon, label, active, badge, onPress }: { icon: AppSymbolName; label: string; active: boolean; badge: number; onPress: () => void }) {
+function MobileInboxTab({ icon, label, active, badge, showBadge = true, onPress }: { icon: AppSymbolName; label: string; active: boolean; badge: number; showBadge?: boolean; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.mobileInboxTab, active && styles.mobileInboxTabActive, pressed && styles.pressed]}>
       <View style={styles.mobileInboxTabIconWrap}>
         <SymbolView name={icon} size={25} tintColor={active ? '#159750' : '#5f6368'} />
-        {badge > 0 && label !== 'All' ? (
+        {showBadge && badge > 0 ? (
           <View style={[styles.mobileInboxTabBadge, active && styles.mobileInboxTabBadgeActive]}>
             <Text style={styles.mobileInboxTabBadgeText}>{badge > 9 ? '9+' : badge}</Text>
           </View>
@@ -1359,19 +1366,20 @@ function TypewriterText({ text, style }: { text: string; style: any }) {
 
 function ConversationRow({ chat, active, compact, onPress }: { chat: SupportChat; active: boolean; compact?: boolean; onPress: () => void }) {
   const { colorScheme } = useThemePreference();
+  const { t } = useTranslation();
   const isLight = colorScheme === 'light';
   const lastMessage = chat.messages.at(-1);
   const needsAnswer = chat.status === 'needs-human';
   const isAI = chat.status === 'ai-active';
   const accentColor = needsAnswer ? '#ef4444' : isAI ? '#8b5cf6' : '#0f6eff';
   const bg = avatarColor(chat.visitorName || 'V');
-  const label = needsAnswer ? 'Needs reply' : isAI ? 'AI handling' : 'Open';
-  const messageLabel = `${chat.messageCount} ${chat.messageCount === 1 ? 'message' : 'messages'}`;
+  const label = needsAnswer ? t('admin_needs_reply') : isAI ? t('status_ai') : t('status_active');
+  const messageLabel = `${chat.messageCount} ${chat.messageCount === 1 ? t('admin_message_one') : t('admin_message_other')}`;
   const sourceLabel = chat.pageTitle || chat.countryCode || chat.pageUrl || '';
   const statusMeta = compact ? messageLabel : `${messageLabel}${sourceLabel ? ` • ${sourceLabel}` : ''}`;
 
   return (
-    <Animated.View entering={FadeInDown.duration(280)} layout={LinearTransition.springify().damping(18)}>
+    <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.duration(180)}>
       <Pressable
         onPress={onPress}
         style={({ pressed }) => [
@@ -1396,12 +1404,12 @@ function ConversationRow({ chat, active, compact, onPress }: { chat: SupportChat
         <View style={styles.chatRowBody}>
           <View style={styles.chatRowTop}>
             <Text style={[styles.chatRowName, compact && styles.chatRowNameCompact, active && styles.chatRowNameActive, isLight && styles.chatRowNameLight, active && isLight && styles.chatRowNameActiveLight, compact && isLight && styles.chatRowNameCompactLight]} numberOfLines={1}>
-              {chat.visitorName || 'Visitor'}
+              {chat.visitorName || t('admin_visitor')}
             </Text>
-            <Text style={[styles.chatRowTime, isLight && styles.chatRowTimeLight, compact && styles.chatRowTimeCompact]}>{formatRelativeTime(chat.updatedAt)}</Text>
+            <Text style={[styles.chatRowTime, isLight && styles.chatRowTimeLight, compact && styles.chatRowTimeCompact]}>{formatRelativeTime(chat.updatedAt, t)}</Text>
           </View>
           <Text style={[styles.chatRowPreview, isLight && styles.chatRowPreviewLight, compact && styles.chatRowPreviewCompact, compact && isLight && styles.chatRowPreviewCompactLight]} numberOfLines={1}>
-            {lastMessage?.text || chat.preview || 'No messages yet'}
+            {lastMessage?.text || chat.preview || t('admin_no_messages')}
           </Text>
           <View style={styles.chatRowMeta}>
             <Text style={[styles.chatRowSource, isLight && styles.chatRowSourceLight, compact && styles.chatRowSourceCompact, compact && isLight && styles.chatRowSourceCompactLight]} numberOfLines={1}>
@@ -1411,7 +1419,7 @@ function ConversationRow({ chat, active, compact, onPress }: { chat: SupportChat
         </View>
         <View style={styles.chatRowRight}>
           <View style={[styles.chatRowBadge, compact && styles.chatRowBadgeCompact, { backgroundColor: compact ? accentColor : accentColor + '18', borderColor: compact ? accentColor : accentColor + '45' }]}>
-            <Text style={[styles.chatRowBadgeText, compact && styles.chatRowBadgeTextCompact, { color: compact ? '#ffffff' : accentColor }]}>{compact && chat.status === 'ai-active' ? 'AI' : compact && chat.status === 'open' ? 'Open' : label}</Text>
+            <Text style={[styles.chatRowBadgeText, compact && styles.chatRowBadgeTextCompact, { color: compact ? '#ffffff' : accentColor }]}>{compact && chat.status === 'ai-active' ? t('status_ai') : compact && chat.status === 'open' ? t('status_active') : label}</Text>
           </View>
           {!compact && <Text style={[styles.chatRowTimestamp, isLight && styles.chatRowTimestampLight]}>{formatTime(chat.updatedAt)}</Text>}
         </View>
@@ -1468,18 +1476,18 @@ function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatRelativeTime(date: Date) {
+function formatRelativeTime(date: Date, t: ReturnType<typeof useTranslation>['t']) {
   const diffMs = Date.now() - date.getTime();
   const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
 
-  if (diffMinutes < 1) return 'Just now';
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffMinutes < 1) return t('admin_just_now');
+  if (diffMinutes < 60) return `${diffMinutes}${t('admin_minutes_ago')}`;
 
   const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24) return `${diffHours}${t('admin_hours_ago')}`;
 
   const diffDays = Math.round(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 7) return `${diffDays}${t('admin_days_ago')}`;
 
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
