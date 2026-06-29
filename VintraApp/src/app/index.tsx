@@ -42,6 +42,7 @@ import {
   type User,
 } from 'firebase/auth';
 
+import { AuroraSky } from '@/components/aurora-sky';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
@@ -126,6 +127,14 @@ function AnimatedBackdrop() {
       <Animated.View style={[styles.blueBand, bandTwo]} />
       <Animated.View style={[styles.scanBeam, beam]} />
       <View style={styles.noiseLayer} />
+    </View>
+  );
+}
+
+export function AuthAuroraBackdrop() {
+  return (
+    <View pointerEvents="none" style={styles.authAurora}>
+      <AuroraSky />
     </View>
   );
 }
@@ -224,10 +233,8 @@ export function AuthScreen({ compact }: { compact: boolean }) {
       <View style={styles.authFormGroup}>
         <View style={styles.brand}>
           <VintraMark />
-          <View>
-            <ThemedText style={styles.brandName}>VINTRA</ThemedText>
-            <ThemedText style={styles.brandSubline}>{t('auth_support_console')}</ThemedText>
-          </View>
+          <ThemedText style={styles.brandName}>VINTRA</ThemedText>
+          <ThemedText style={styles.brandSubline}>{t('auth_support_console')}</ThemedText>
         </View>
         <View style={styles.authCard}>
           <View style={styles.segment}>
@@ -1702,6 +1709,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.005)',
   },
+  authAurora: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+    backgroundColor: '#040a17',
+  },
   content: {
     flexGrow: 1,
     width: '100%',
@@ -1745,10 +1757,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brand: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 2,
+    gap: 6,
+    marginBottom: 8,
   },
   brandDark: {
     flexDirection: 'row',
@@ -1756,15 +1768,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   logoMark: {
-    width: 58,
-    height: 46,
+    width: 92,
+    height: 72,
   },
   brandName: {
-    color: '#ffffff',
-    fontSize: 16,
-    lineHeight: 18,
+    color: '#f4fbff',
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: '900',
-    letterSpacing: 0,
+    letterSpacing: 7,
+    textAlign: 'center',
+    textShadowColor: 'rgba(110,231,199,0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 16,
   },
   brandNameDark: {
     color: '#ffffff',
@@ -1775,11 +1791,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   brandSubline: {
-    color: '#94a3b8',
+    color: '#9fd8cb',
     fontSize: 12,
-    lineHeight: 14,
+    lineHeight: 16,
     fontWeight: '700',
-    letterSpacing: 0,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   brandSublineDark: {
     color: '#94a3b8',
@@ -1802,25 +1820,25 @@ const styles = StyleSheet.create({
   authCard: {
     width: '100%',
     maxWidth: 400,
-    borderRadius: 20,
-    padding: 20,
-    backgroundColor: 'rgba(9,18,32,0.92)',
+    borderRadius: 24,
+    padding: 22,
+    backgroundColor: 'rgba(8,18,34,0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
+    borderColor: 'rgba(110,231,199,0.16)',
+    shadowColor: '#0b3b34',
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 16 },
   },
   segment: {
     height: 46,
     padding: 4,
-    borderRadius: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.05)',
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(110,231,199,0.1)',
   },
   segmentButton: {
     flex: 1,
@@ -1829,10 +1847,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentActive: {
-    backgroundColor: '#0f6eff',
-    shadowColor: '#0f6eff',
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    backgroundColor: '#15b89a',
+    shadowColor: '#15b89a',
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
   },
   segmentText: {
@@ -1866,14 +1884,14 @@ const styles = StyleSheet.create({
   },
   inputShell: {
     minHeight: 52,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: Spacing.three,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(110,231,199,0.14)',
   },
   input: {
     flex: 1,
@@ -1883,19 +1901,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   submitButton: {
-    minHeight: 52,
-    borderRadius: 12,
-    marginTop: 16,
+    minHeight: 54,
+    borderRadius: 14,
+    marginTop: 18,
     paddingHorizontal: Spacing.five,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#0f6eff',
-    shadowColor: '#0f6eff',
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    backgroundColor: '#15b89a',
+    shadowColor: '#15b89a',
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
     elevation: 6,
   },
   submitButtonBusy: {

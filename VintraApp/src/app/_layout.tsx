@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AuthScreen } from './index';
+import { AuthScreen, AuthAuroraBackdrop } from './index';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
@@ -61,8 +61,8 @@ function RootLayoutContent() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {!authReady || !themeReady ? (
-        <View style={[styles.loadingScreen, { backgroundColor: colorScheme === 'dark' ? '#06111f' : '#f5f8fc' }]}>
-          <ActivityIndicator color="#ffffff" size="large" />
+        <View style={[styles.loadingScreen, { backgroundColor: colorScheme === 'dark' ? '#040a17' : '#f5f8fc' }]}>
+          <ActivityIndicator color="#15b89a" size="large" />
         </View>
       ) : isLoggedIn ? (
         <>
@@ -70,7 +70,8 @@ function RootLayoutContent() {
           <ThemeChoiceModal visible={showThemePrompt} onChoose={chooseTheme} />
         </>
       ) : (
-        <View style={{ flex: 1, backgroundColor: '#06111f' }}>
+        <View style={{ flex: 1, backgroundColor: '#040a17' }}>
+          <AuthAuroraBackdrop />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <ScrollView
               showsVerticalScrollIndicator={false}
