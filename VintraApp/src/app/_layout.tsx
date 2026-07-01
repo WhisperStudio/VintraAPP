@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
+import { onAuthStateChanged, reload, signInWithEmailAndPassword } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,6 +42,13 @@ function RootLayoutContent() {
     const unsubAuth = onAuthStateChanged(firebaseAuth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
+      // Refresh the user's emailVerified status — the initial auth state may
+      // carry a stale ID token where emailVerified is still false.
+      if (currentUser) {
+        reload(currentUser)
+          .then(() => setUser(firebaseAuth.currentUser))
+          .catch(() => {});
+      }
     });
 
     AsyncStorage.getItem('@vintra_creds').then((raw) => {

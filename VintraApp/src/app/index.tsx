@@ -218,7 +218,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
       } else {
         const credentials = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
         await reload(credentials.user).catch(() => {});
-        if (!credentials.user.emailVerified) {
+        if (!firebaseAuth.currentUser?.emailVerified) {
           // Mirror the website: block unverified sign-ins. Resend the link and
           // sign back out so the app stays on the auth screen.
           await sendEmailVerification(credentials.user).catch(() => {});
