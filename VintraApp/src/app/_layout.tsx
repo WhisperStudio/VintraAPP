@@ -10,6 +10,7 @@ import { AuthScreen, AuthAuroraBackdrop } from './index';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { VintraChatWidget } from '@/components/vintra-chat-widget';
+import { WelcomeTutorial } from '@/components/welcome-tutorial';
 import { firebaseAuth } from '@/lib/firebase';
 import { LanguageProvider, useTranslation } from '@/lib/i18n';
 import { ThemePreferenceProvider, useThemePreference, type ThemePreference } from '@/lib/theme-preference';
@@ -29,6 +30,13 @@ function RootLayoutContent() {
   const compact = width < 760;
   const [user, setUser] = useState<import('firebase/auth').User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@vintra_onboarded')
+      .then((val) => setOnboarded(val === 'true'))
+      .catch(() => setOnboarded(false));
+  }, []);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(firebaseAuth, (currentUser) => {
@@ -49,11 +57,29 @@ function RootLayoutContent() {
     return unsubAuth;
   }, []);
 
-  const isLoggedIn = authReady && themeReady && !!user;
+  // Never keep saved credentials for an unverified account, so stale sessions
+  // from older builds can't auto-login into a broken, access-less state.
+  useEffect(() => {
+    if (authReady && user && !user.emailVerified) {
+      AsyncStorage.removeItem('@vintra_creds').catch(() => {});
+    }
+  }, [authReady, user]);
+
+  // Only treat a user as logged in once their email is verified. This mirrors
+  // the website and prevents freshly-registered (unverified) accounts from being
+  // dropped into a broken, access-less dashboard.
+  const isLoggedIn = authReady && themeReady && !!user && !!user.emailVerified;
   const showThemePrompt = isLoggedIn && !savedTheme;
+  const showTutorial = isLoggedIn && !!savedTheme && onboarded === false;
+  const tutorialName = user?.displayName?.trim() || user?.email?.split('@')[0] || '';
 
   const chooseTheme = (theme: ThemePreference) => {
     setTheme(theme).catch(() => {});
+  };
+
+  const finishTutorial = () => {
+    setOnboarded(true);
+    AsyncStorage.setItem('@vintra_onboarded', 'true').catch(() => {});
   };
 
   return (
@@ -68,6 +94,7 @@ function RootLayoutContent() {
         <>
           <AppTabs />
           <ThemeChoiceModal visible={showThemePrompt} onChoose={chooseTheme} />
+          <WelcomeTutorial visible={showTutorial} displayName={tutorialName} onDone={finishTutorial} />
         </>
       ) : (
         <View style={{ flex: 1, backgroundColor: '#040a17' }}>

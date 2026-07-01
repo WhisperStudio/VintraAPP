@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "VintraApp",
+    "name": "Vintra",
     "slug": "VintraApp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "scheme": "vintraapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.vintrastudio.VintraApp",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false

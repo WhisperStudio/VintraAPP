@@ -185,7 +185,6 @@ export function AuthScreen({ compact }: { compact: boolean }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -206,20 +205,34 @@ export function AuthScreen({ compact }: { compact: boolean }) {
     try {
       if (isRegister) {
         const credentials = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        await updateProfile(credentials.user, { displayName: name.trim() });
-        await ensureVerifiedPendingUser(credentials.user, phone.trim());
+        await updateProfile(credentials.user, { displayName: name.trim() }).catch(() => {});
+        await ensureVerifiedPendingUser(credentials.user).catch(() => {});
         await sendEmailVerification(credentials.user).catch(() => {});
-        await acceptPendingInvitationsForUser(credentials.user, phone.trim()).catch(() => 0);
+        // New accounts are unverified: sign out so we never drop the user into a
+        // broken, access-less dashboard, and never persist unverified credentials.
+        await signOut(firebaseAuth).catch(() => {});
+        await AsyncStorage.removeItem('@vintra_creds').catch(() => {});
+        setMode('login');
+        setPassword('');
         Alert.alert(t('auth_verify_title'), t('auth_verify_msg'));
       } else {
         const credentials = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
         await reload(credentials.user).catch(() => {});
+        if (!credentials.user.emailVerified) {
+          // Mirror the website: block unverified sign-ins. Resend the link and
+          // sign back out so the app stays on the auth screen.
+          await sendEmailVerification(credentials.user).catch(() => {});
+          await signOut(firebaseAuth).catch(() => {});
+          await AsyncStorage.removeItem('@vintra_creds').catch(() => {});
+          Alert.alert(t('auth_verify_needed_title'), t('auth_verify_needed_msg'));
+          return;
+        }
         const accepted = await acceptPendingInvitationsForUser(credentials.user).catch(() => 0);
         if (accepted > 0) {
           Alert.alert(t('auth_access_activated_title'), t('auth_access_activated_msg'));
         }
+        await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
       }
-      await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('auth_generic_error');
       Alert.alert(isRegister ? t('auth_registration_failed') : t('auth_sign_in_failed'), message);
@@ -237,6 +250,12 @@ export function AuthScreen({ compact }: { compact: boolean }) {
           <ThemedText style={styles.brandSubline}>{t('auth_support_console')}</ThemedText>
         </View>
         <View style={styles.authCard}>
+          {isRegister && (
+            <View style={styles.registerBanner}>
+              <ThemedText style={styles.registerBannerTitle}>{t('auth_register_banner_title')}</ThemedText>
+              <ThemedText style={styles.registerBannerMsg}>{t('auth_register_banner_msg')}</ThemedText>
+            </View>
+          )}
           <View style={styles.segment}>
             <Pressable onPress={() => setMode('login')} style={[styles.segmentButton, !isRegister && styles.segmentActive]}>
               <ThemedText style={[styles.segmentText, !isRegister && styles.segmentTextActive]}>{t('auth_sign_in')}</ThemedText>
@@ -268,16 +287,6 @@ export function AuthScreen({ compact }: { compact: boolean }) {
               value={email}
               onChangeText={setEmail}
             />
-            {isRegister && (
-              <AuthField
-                icon={{ ios: 'phone.fill', android: 'phone', web: 'phone' }}
-                keyboardType="phone-pad"
-                placeholder={t('auth_phone_invite')}
-                returnKeyType="next"
-                value={phone}
-                onChangeText={setPhone}
-              />
-            )}
             <AuthField
               icon={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
               autoComplete="password"
@@ -1829,6 +1838,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 28,
     shadowOffset: { width: 0, height: 16 },
+  },
+  registerBanner: {
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    backgroundColor: 'rgba(110,231,199,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(110,231,199,0.22)',
+  },
+  registerBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6ee7c7',
+    marginBottom: 4,
+  },
+  registerBannerMsg: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.7)',
   },
   segment: {
     height: 46,
