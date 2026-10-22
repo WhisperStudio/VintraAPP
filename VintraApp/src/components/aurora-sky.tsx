@@ -1,340 +1,247 @@
-import { useMemo, useEffect } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { memo, useEffect, useId } from 'react';
+import { AppState, StyleSheet, View } from 'react-native';
+import Svg, {
+  Circle,
+  Defs,
+  Filter,
+  FeGaussianBlur,
+  G,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
-  withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 
-function rand(seed: number) {
-  const x = Math.sin(seed * 99.731) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-// Vertical color gradient slices: green base -> teal mid -> blue-violet top.
-// Each slice is a thin horizontal band; stacked they form one ray.
-const SLICES = 18;
-const SLICE_COLORS = Array.from({ length: SLICES }, (_, i) => {
-  const t = i / (SLICES - 1);
-  if (t < 0.25) return `rgba(80,255,150,${0.15 + t * 0.8})`;
-  if (t < 0.5) return `rgba(60,240,180,${0.35 + (0.5 - t) * 0.5})`;
-  if (t < 0.75) return `rgba(70,200,255,${0.25 + (0.75 - t) * 0.3})`;
-  return `rgba(140,130,255,${0.08 + (1 - t) * 0.15})`;
-});
-const SLICE_OPACITY = Array.from({ length: SLICES }, (_, i) => {
-  const t = i / (SLICES - 1);
-  return Math.pow(1 - t, 0.6) * 0.9 + 0.1;
-});
-
-type RaySpec = {
-  leftPct: number;
-  width: number;
-  height: number;
-  peak: number;
-  delay: number;
-  baseOffset: number;
-  wavePhase: number;
-  waveAmp: number;
+const random = (seed: number) => {
+  const n = Math.sin(seed * 127.1) * 43758.5453;
+  return n - Math.floor(n);
 };
-
-function buildRays(count: number, arcAmp: number, seedBase: number): RaySpec[] {
-  const rays: RaySpec[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const r1 = rand(seedBase + i * 1.7);
-    const r2 = rand(seedBase + i * 3.3);
-    const r3 = rand(seedBase + i * 5.1);
-    const r4 = rand(seedBase + i * 7.9);
-    rays.push({
-      leftPct: t * 100,
-      width: 14 + r1 * 26,
-      height: 120 + r2 * 200,
-      peak: 0.35 + r4 * 0.5,
-      delay: Math.floor(r1 * 3000),
-      baseOffset: Math.sin(Math.PI * t) * arcAmp + (r2 - 0.5) * 16,
-      wavePhase: r3 * Math.PI * 2,
-      waveAmp: 8 + r4 * 22,
-    });
-  }
-  return rays;
-}
-
-function Ray({ spec }: { spec: RaySpec }) {
-  const shimmer = useSharedValue(0.4);
-  const grow = useSharedValue(0.9);
-  const sway = useSharedValue(0);
-
-  useEffect(() => {
-    const up = 1600 + Math.round(rand(spec.leftPct + 1) * 2000);
-    const down = 1800 + Math.round(rand(spec.leftPct + 2) * 2200);
-    shimmer.value = withDelay(
-      spec.delay,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: up, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0.35, { duration: down, easing: Easing.inOut(Easing.sin) }),
-        ),
-        -1,
-        true,
-      ),
-    );
-    grow.value = withDelay(
-      spec.delay,
-      withRepeat(
-        withSequence(
-          withTiming(1.12, { duration: up + 500, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0.88, { duration: down + 300, easing: Easing.inOut(Easing.sin) }),
-        ),
-        -1,
-        true,
-      ),
-    );
-    sway.value = withDelay(
-      spec.delay,
-      withRepeat(
-        withTiming(1, { duration: 5000 + Math.round(rand(spec.leftPct + 3) * 4000), easing: Easing.inOut(Easing.sin) }),
-        -1,
-        true,
-      ),
-    );
-  }, [grow, shimmer, sway, spec.delay, spec.leftPct]);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const wave = Math.sin(spec.wavePhase + sway.value * Math.PI * 2) * spec.waveAmp;
+const stars = Array.from({ length: 72 }, (_, i) => ({
+  x: random(i + 1) * 1000,
+  y: random(i + 91) * 650,
+  r: 0.45 + random(i + 34) * 1.1,
+}));
+// Thin filaments follow a continuous, folded lower edge. Oxygen green is brightest
+// at the base; the much fainter violet emission fades upward into the night sky.
+function curtain(seed: number) {
+  return Array.from({ length: 110 }, (_, i) => {
+    const x = i * 10 - 50;
+    const base =
+      330 + Math.sin(i * 0.047 + seed) * 95 + Math.sin(i * 0.13 + seed) * 24;
+    const height = 115 + random(i + seed * 9) * 120;
+    const bend = 34 * Math.sin(i * 0.047 + seed);
     return {
-      opacity: shimmer.value * spec.peak,
-      transform: [
-        { translateX: wave },
-        { scaleY: grow.value },
-      ],
+      d: `M ${x} ${base} C ${x + bend * 0.3} ${base - 45} ${x + bend} ${base - height * 0.7} ${x + bend + 22} ${base - height}`,
+      opacity: 0.13 + random(i + seed) * 0.29,
+      width: 5 + random(i + seed * 4) * 8,
     };
   });
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.ray,
-        {
-          left: `${spec.leftPct}%`,
-          width: spec.width,
-          height: spec.height,
-          bottom: spec.baseOffset,
-          marginLeft: -spec.width / 2,
-        },
-        animatedStyle,
-      ]}>
-      {SLICE_COLORS.map((color, i) => (
-        <View
-          key={i}
-          style={{
-            flex: 1,
-            backgroundColor: color,
-            opacity: SLICE_OPACITY[i],
-          }}
-        />
-      ))}
-    </Animated.View>
-  );
 }
+const near = curtain(1);
+const far = curtain(4);
 
-function AuroraBand({
-  topPct,
-  height,
-  rays,
-  drift,
-  skew,
-  duration,
-  delay,
-}: {
-  topPct: number;
-  height: number;
-  rays: RaySpec[];
-  drift: number;
-  skew: number;
-  duration: number;
-  delay: number;
-}) {
-  const t = useSharedValue(0);
-
+function AuroraLayer({ distant = false }: { distant?: boolean }) {
+  const id = useId().replace(/:/g, '');
+  const phase = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
   useEffect(() => {
-    t.value = withDelay(delay, withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true));
-  }, [delay, duration, t]);
-
-  const style = useAnimatedStyle(() => ({
+    const start = () => {
+      if (!reduceMotion)
+        phase.value = withRepeat(
+          withTiming(1, {
+            duration: distant ? 22000 : 17000,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          -1,
+          true,
+        );
+    };
+    start();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') start();
+      else cancelAnimation(phase);
+    });
+    return () => {
+      subscription.remove();
+      cancelAnimation(phase);
+    };
+  }, [distant, phase, reduceMotion]);
+  const drift = useAnimatedStyle(() => ({
+    opacity: distant ? 0.36 : 0.65 + phase.value * 0.18,
     transform: [
-      { translateX: -drift + t.value * drift * 2 },
-      { skewX: `${-skew + t.value * skew * 2}deg` },
+      { translateX: phase.value * (distant ? -18 : 24) },
+      { translateY: phase.value * 9 },
+      { scaleY: 1 + phase.value * 0.07 },
     ],
   }));
-
   return (
-    <Animated.View pointerEvents="none" style={[styles.band, { top: `${topPct}%`, height }, style]}>
-      {rays.map((spec, i) => (
-        <Ray key={i} spec={spec} />
-      ))}
+    <Animated.View style={[StyleSheet.absoluteFill, drift]}>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 1000 900"
+        preserveAspectRatio="xMidYMid slice"
+      >
+        <Defs>
+          <Filter
+            id={`${id}-soft`}
+            x="-20%"
+            y="-30%"
+            width="140%"
+            height="160%"
+          >
+            <FeGaussianBlur stdDeviation="3" />
+          </Filter>
+          <Filter
+            id={`${id}-glow`}
+            x="-20%"
+            y="-50%"
+            width="140%"
+            height="200%"
+          >
+            <FeGaussianBlur stdDeviation="14" />
+          </Filter>
+          <LinearGradient id={`${id}-rays`} x1="0" y1="0" x2="0.15" y2="1">
+            <Stop offset="0" stopColor="#9470df" stopOpacity="0" />
+            <Stop offset="0.23" stopColor="#9373d8" stopOpacity="0.07" />
+            <Stop offset="0.55" stopColor="#42dca9" stopOpacity="0.24" />
+            <Stop offset="0.87" stopColor="#68f5ad" stopOpacity="0.72" />
+            <Stop offset="1" stopColor="#a1ffb7" stopOpacity="0" />
+          </LinearGradient>
+          <LinearGradient id={`${id}-veil`} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#397cc0" stopOpacity="0" />
+            <Stop offset="0.5" stopColor="#2ad797" stopOpacity="0.025" />
+            <Stop offset="0.9" stopColor="#65ffb0" stopOpacity="0.13" />
+            <Stop offset="1" stopColor="#65ffb0" stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Path
+          d={
+            distant
+              ? 'M -80 290 Q 160 100 400 260 T 1080 210 L 1080 80 Q 650 0 400 95 T -80 60 Z'
+              : 'M -80 370 Q 180 520 460 310 T 1080 360 L 1080 95 Q 700 0 460 95 T -80 140 Z'
+          }
+          fill={`url(#${id}-veil)`}
+          filter={`url(#${id}-glow)`}
+        />
+        <Path
+          d={
+            distant
+              ? 'M -50 250 C 200 160 400 360 650 270 S 850 180 1100 240'
+              : 'M -50 375 C 180 475 340 390 480 285 S 800 265 1100 360'
+          }
+          fill="none"
+          stroke="#67edaf"
+          strokeWidth={30}
+          opacity={0.1}
+          filter={`url(#${id}-glow)`}
+        />
+        <G filter={`url(#${id}-soft)`}>
+          {(distant ? far : near).map((ray, index) => (
+            <Path
+              key={index}
+              d={ray.d}
+              fill="none"
+              stroke={`url(#${id}-rays)`}
+              strokeWidth={ray.width}
+              opacity={ray.opacity}
+              strokeLinecap="round"
+            />
+          ))}
+        </G>
+      </Svg>
     </Animated.View>
   );
 }
 
-// Diffuse glow blobs that sit at the base of the aurora — the bright horizon.
-function BaseGlow({ leftPct, width, color, delay, duration }: { leftPct: number; width: number; color: string; delay: number; duration: number }) {
-  const pulse = useSharedValue(0.5);
-  useEffect(() => {
-    pulse.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.4, { duration: duration + 800, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1, true,
-    ));
-  }, [delay, duration, pulse]);
-
-  const style = useAnimatedStyle(() => ({ opacity: pulse.value * 0.6 }));
-
+export const AuroraSky = memo(function AuroraSky() {
+  const id = useId().replace(/:/g, '');
   return (
-    <Animated.View
+    <View
       pointerEvents="none"
-      style={[
-        styles.baseGlow,
-        { left: `${leftPct}%`, width, height: width * 0.5, marginLeft: -width / 2, backgroundColor: color },
-        style,
-      ]}
-    />
-  );
-}
-
-const STAR_SEEDS = [
-  { top: '4%', left: '12%', size: 2, delay: 0 },
-  { top: '8%', left: '76%', size: 2, delay: 500 },
-  { top: '12%', left: '38%', size: 1.5, delay: 1000 },
-  { top: '5%', left: '58%', size: 2, delay: 1500 },
-  { top: '16%', left: '88%', size: 1.5, delay: 800 },
-  { top: '10%', left: '24%', size: 2.5, delay: 1900 },
-  { top: '18%', left: '6%', size: 1.5, delay: 1200 },
-  { top: '3%', left: '46%', size: 2, delay: 2300 },
-  { top: '14%', left: '66%', size: 2, delay: 350 },
-  { top: '20%', left: '92%', size: 1.5, delay: 700 },
-  { top: '7%', left: '34%', size: 1.5, delay: 1600 },
-  { top: '11%', left: '4%', size: 2, delay: 1100 },
-] as const;
-
-function Star({ top, left, size, delay }: { top: string; left: string; size: number; delay: number }) {
-  const twinkle = useSharedValue(0.2);
-  useEffect(() => {
-    twinkle.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(0.9, { duration: 1200, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0.15, { duration: 1500, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1, true,
-    ));
-  }, [delay, twinkle]);
-  const style = useAnimatedStyle(() => ({ opacity: twinkle.value }));
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.star, { top: top as any, left: left as any, width: size, height: size, borderRadius: size }, style]}
-    />
-  );
-}
-
-export function AuroraSky() {
-  const frontRays = useMemo(() => buildRays(22, 36, 11), []);
-  const backRays = useMemo(() => buildRays(16, 28, 47), []);
-
-  return (
-    <View pointerEvents="none" style={styles.root}>
-      <View style={styles.skyDeep} />
-      <View style={styles.skyMid} />
-
-      {STAR_SEEDS.map((s, i) => (
-        <Star key={i} top={s.top} left={s.left} size={s.size} delay={s.delay} />
-      ))}
-
-      {/* Diffuse base glow near horizon */}
-      <View style={styles.horizonBand}>
-        <BaseGlow leftPct={20} width={240} color="rgba(50,255,140,0.12)" delay={0} duration={4000} />
-        <BaseGlow leftPct={50} width={300} color="rgba(60,240,180,0.1)" delay={800} duration={5000} />
-        <BaseGlow leftPct={78} width={260} color="rgba(80,220,255,0.08)" delay={1600} duration={4500} />
-      </View>
-
-      {/* Back curtain — dimmer, cooler colors */}
-      <View style={styles.screenBlend}>
-        <AuroraBand topPct={12} height={280} rays={backRays} drift={22} skew={4} duration={10000} delay={600} />
-      </View>
-
-      {/* Front curtain — brighter, green-dominant */}
-      <View style={styles.screenBlend}>
-        <AuroraBand topPct={8} height={340} rays={frontRays} drift={30} skew={6} duration={8000} delay={0} />
-      </View>
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.root}
+    >
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 1000 900"
+        preserveAspectRatio="xMidYMid slice"
+      >
+        <Defs>
+          <RadialGradient id={`${id}-sky`} cx="48%" cy="40%" rx="65%" ry="60%">
+            <Stop offset="0" stopColor="#102b33" />
+            <Stop offset="0.5" stopColor="#081723" />
+            <Stop offset="1" stopColor="#030914" />
+          </RadialGradient>
+          <LinearGradient id={`${id}-fade`} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#030914" stopOpacity="0" />
+            <Stop offset="1" stopColor="#030914" />
+          </LinearGradient>
+        </Defs>
+        <Rect width="1000" height="900" fill={`url(#${id}-sky)`} />
+        {stars.map((star, i) => (
+          <Circle
+            key={i}
+            cx={star.x}
+            cy={star.y}
+            r={star.r}
+            fill="#d9edff"
+            opacity={0.15 + random(i + 9) * 0.45}
+          />
+        ))}
+      </Svg>
+      <AuroraLayer distant />
+      <AuroraLayer />
+      <Svg
+        style={StyleSheet.absoluteFill}
+        width="100%"
+        height="100%"
+        viewBox="0 0 1000 900"
+        preserveAspectRatio="xMidYMid slice"
+      >
+        <Defs>
+          <LinearGradient
+            id={`${id}-foreground-fade`}
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
+          >
+            <Stop offset="0" stopColor="#030914" stopOpacity="0" />
+            <Stop offset="1" stopColor="#030914" />
+          </LinearGradient>
+        </Defs>
+        <Path
+          d="M 0 800 L 95 735 L 165 770 L 270 680 L 350 740 L 460 705 L 590 780 L 690 720 L 820 775 L 920 695 L 1000 745 L 1000 900 L 0 900 Z"
+          fill="#030914"
+          opacity="0.7"
+        />
+        <Rect
+          y="520"
+          width="1000"
+          height="380"
+          fill={`url(#${id}-foreground-fade)`}
+        />
+      </Svg>
     </View>
   );
-}
-
+});
 const styles = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#030914',
     overflow: 'hidden',
-    backgroundColor: '#020610',
-  },
-  skyDeep: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#030a18',
-  },
-  skyMid: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '50%',
-    backgroundColor: 'rgba(6,16,32,0.5)',
-  },
-  horizonBand: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: '28%',
-    height: 200,
-  },
-  baseGlow: {
-    position: 'absolute',
-    bottom: 0,
-    borderRadius: 999,
-    ...Platform.select({
-      ios: { shadowColor: '#3eff8b', shadowOpacity: 1, shadowRadius: 60 },
-      default: {},
-    }),
-  },
-  screenBlend: {
-    ...StyleSheet.absoluteFillObject,
-    ...Platform.select({
-      web: { mixBlendMode: 'screen' as any },
-      default: {},
-    }),
-  },
-  band: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
-  ray: {
-    position: 'absolute',
-    transformOrigin: 'bottom',
-    borderRadius: 16,
-    overflow: 'hidden',
-    // Soft blur on iOS to diffuse hard edges into glowing light
-    ...Platform.select({
-      ios: { shadowColor: '#50ff96', shadowOpacity: 0.8, shadowRadius: 20, shadowOffset: { width: 0, height: 0 } },
-      default: {},
-    }),
-  },
-  star: {
-    position: 'absolute',
-    backgroundColor: '#eaf4ff',
   },
 });

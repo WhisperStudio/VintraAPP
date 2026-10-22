@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,17 +15,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  addDoc,
   collection,
   getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
 } from 'firebase/firestore';
 
 import { firebaseDb } from '@/lib/firebase';
-import { fetchPushTokens, sendExpoPush } from '@/lib/push-sender';
+import { createRequestId, loadNotificationCenter, queueAnnouncement } from '@/lib/push-sender';
 
 /* ── Constants ─────────────────────────────────────────────── */
 export const SUPER_ADMIN_EMAIL = 'vintrastudio@gmail.com';
@@ -72,6 +67,8 @@ export function SuperAdminPanel({
   const [targetBiz, setTargetBiz] = useState<string>('all');
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
+  const sendLock = useRef(false);
+  const pendingRequest = useRef<{ fingerprint: string; id: string } | null>(null);
 
   /* Businesses */
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -84,14 +81,11 @@ export function SuperAdminPanel({
     if (!visible) return;
     loadBusinesses();
 
-    const logUnsub = onSnapshot(
-      query(collection(firebaseDb, 'notificationQueue'), orderBy('createdAt', 'desc')),
-      snap => {
-        setNotifLog(snap.docs.slice(0, 30).map(d => ({ id: d.id, ...d.data() } as NotifLog)));
-      },
-      () => {},
-    );
-    return () => logUnsub();
+    let active = true;
+    const refresh = () => loadNotificationCenter().then(center => { if (active) setNotifLog(center.history); }).catch(console.warn);
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => { active = false; clearInterval(interval); };
   }, [visible]);
 
   async function loadBusinesses() {
@@ -107,50 +101,24 @@ export function SuperAdminPanel({
   }
 
   async function sendNotification() {
-    if (!notifTitle.trim() || !notifBody.trim()) return;
+    if (!notifTitle.trim() || !notifBody.trim() || sendLock.current) return;
+    sendLock.current = true;
     setSending(true);
     setSentOk(false);
     try {
-      const tokens = await fetchPushTokens(targetBiz);
-      const result = tokens.length
-        ? await sendExpoPush(tokens, notifTitle.trim(), notifBody.trim())
-        : { total: 0, sent: 0, failed: 0 };
-
-      const status =
-        result.total === 0
-          ? 'no-recipients'
-          : result.failed === 0
-            ? 'sent'
-            : result.sent === 0
-              ? 'failed'
-              : 'partial';
-
-      await addDoc(collection(firebaseDb, 'notificationQueue'), {
-        title: notifTitle.trim(),
-        body: notifBody.trim(),
-        targetBusinessId: targetBiz,
-        status,
-        recipients: result.total,
-        sentCount: result.sent,
-        failedCount: result.failed,
-        createdAt: serverTimestamp(),
-        createdBy: userEmail,
-      });
-
-      if (result.total === 0) {
-        Alert.alert('No recipients', 'No registered devices were found for this target.');
-      }
-
+      const fingerprint = JSON.stringify([notifTitle.trim(), notifBody.trim(), targetBiz]);
+      if (pendingRequest.current?.fingerprint !== fingerprint) pendingRequest.current = { fingerprint, id: createRequestId() };
+      await queueAnnouncement({ title: notifTitle.trim(), body: notifBody.trim(), targetBusinessId: targetBiz, requestId: pendingRequest.current.id });
+      pendingRequest.current = null;
       setSentOk(true);
       setNotifTitle('');
       setNotifBody('');
-      setTargetBiz('all');
-      setTimeout(() => setSentOk(false), 3000);
+      loadNotificationCenter().then(center => setNotifLog(center.history)).catch(console.warn);
     } catch (e) {
-      console.error('super-admin: failed to send notification', e);
-      Alert.alert('Send failed', e instanceof Error ? e.message : 'Could not send the notification.');
+      Alert.alert('Send failed', e instanceof Error ? e.message : 'Could not queue the notification.');
     } finally {
       setSending(false);
+      sendLock.current = false;
     }
   }
 
@@ -322,8 +290,7 @@ export function SuperAdminPanel({
                 </Pressable>
 
                 <Text style={st.hint}>
-                  Sends push notifications directly to all registered devices via the{' '}
-                  <Text style={{ color: '#60a5fa' }}>Expo Push API</Text>.
+                  Queue an announcement for connected devices. Check history for delivery progress.
                 </Text>
               </View>
             )}

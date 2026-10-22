@@ -2,11 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -17,27 +16,18 @@ import {
   Text,
   TextInput,
   useWindowDimensions,
-  Vibration,
   View,
 } from 'react-native';
 import Animated, {
-  Easing,
   FadeInDown,
   LinearTransition,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
-  reload,
   sendEmailVerification,
   signInWithEmailAndPassword,
-  signOut,
   updateProfile,
   type User,
 } from 'firebase/auth';
@@ -45,11 +35,10 @@ import {
 import { AuroraSky } from '@/components/aurora-sky';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import {
   fetchWidgets,
   acceptPendingInvitationsForUser,
-  ensureVerifiedPendingUser,
   listenSupportChat,
   closeSupportChat,
   listenSupportChats,
@@ -63,13 +52,13 @@ import {
   type Widget,
 } from '@/lib/admin-chat';
 import { firebaseAuth } from '@/lib/firebase';
+import { useAuthSession } from '@/lib/auth-session';
 import { useTranslation } from '@/lib/i18n';
-import { registerPushToken, sendLocalNotification } from '@/lib/notifications';
+import { signOutWithNotifications } from '@/lib/notifications';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
 import { setTabsHidden } from '@/lib/tab-visibility';
 import { useThemePreference } from '@/lib/theme-preference';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type AppSymbolName = NonNullable<ComponentProps<typeof SymbolView>['name']>;
 
 function VintraMark() {
@@ -79,55 +68,6 @@ function VintraMark() {
       style={styles.logoMark}
       contentFit="contain"
     />
-  );
-}
-
-function AnimatedBackdrop() {
-  const drift = useSharedValue(0);
-  const pulse = useSharedValue(1);
-
-  useEffect(() => {
-    drift.value = withRepeat(withTiming(1, { duration: 16000, easing: Easing.inOut(Easing.cubic) }), -1, true);
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1.012, { duration: 5200, easing: Easing.inOut(Easing.quad) }),
-        withTiming(1, { duration: 5200, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-      false,
-    );
-  }, [drift, pulse]);
-
-  const bandOne = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: -42 + drift.value * 38 },
-      { translateY: -18 + drift.value * 12 },
-      { rotateZ: '-18deg' },
-      { scale: pulse.value },
-    ],
-  }));
-
-  const bandTwo = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: 52 - drift.value * 34 },
-      { translateY: 42 - drift.value * 14 },
-      { rotateZ: '24deg' },
-      { scale: 1.01 },
-    ],
-  }));
-
-  const beam = useAnimatedStyle(() => ({
-    opacity: 0.18 + drift.value * 0.08,
-    transform: [{ translateX: -120 + drift.value * 240 }, { rotateZ: '16deg' }],
-  }));
-
-  return (
-    <View pointerEvents="none" style={styles.backdrop}>
-      <Animated.View style={[styles.lightBand, bandOne]} />
-      <Animated.View style={[styles.blueBand, bandTwo]} />
-      <Animated.View style={[styles.scanBeam, beam]} />
-      <View style={styles.noiseLayer} />
-    </View>
   );
 }
 
@@ -182,63 +122,89 @@ function AuthField({
 
 export function AuthScreen({ compact }: { compact: boolean }) {
   const { t } = useTranslation();
+  const session = useAuthSession();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-
+  const [feedback, setFeedback] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const submitLock = useRef(false);
   const isRegister = mode === 'register';
+  const pendingUser = session.user;
+  const checking = session.status === 'checking';
 
   async function submit() {
-    if (!email.trim() || !password) {
-      Alert.alert(t('auth_missing_info_title'), t('auth_missing_info_msg'));
-      return;
-    }
-
-    if (isRegister && !name.trim()) {
-      Alert.alert(t('auth_missing_name_title'), t('auth_missing_name_msg'));
-      return;
-    }
-
+    if (submitLock.current) return;
+    if (!email.trim() || !password) { setFeedback(t('auth_missing_info_msg')); return; }
+    if (isRegister && !name.trim()) { setFeedback(t('auth_missing_name_msg')); return; }
+    submitLock.current = true;
     setBusy(true);
+    setFeedback('');
     try {
       if (isRegister) {
         const credentials = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        await updateProfile(credentials.user, { displayName: name.trim() }).catch(() => {});
-        await ensureVerifiedPendingUser(credentials.user).catch(() => {});
-        await sendEmailVerification(credentials.user).catch(() => {});
-        // New accounts are unverified: sign out so we never drop the user into a
-        // broken, access-less dashboard, and never persist unverified credentials.
-        await signOut(firebaseAuth).catch(() => {});
-        await AsyncStorage.removeItem('@vintra_creds').catch(() => {});
-        setMode('login');
+        await updateProfile(credentials.user, { displayName: name.trim() });
+        await sendEmailVerification(credentials.user);
+        setResendAt(Date.now() + 60000);
+        setFeedback(t('auth_verify_msg'));
         setPassword('');
-        Alert.alert(t('auth_verify_title'), t('auth_verify_msg'));
       } else {
         const credentials = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        await reload(credentials.user).catch(() => {});
-        if (!firebaseAuth.currentUser?.emailVerified) {
-          // Mirror the website: block unverified sign-ins. Resend the link and
-          // sign back out so the app stays on the auth screen.
-          await sendEmailVerification(credentials.user).catch(() => {});
-          await signOut(firebaseAuth).catch(() => {});
-          await AsyncStorage.removeItem('@vintra_creds').catch(() => {});
-          Alert.alert(t('auth_verify_needed_title'), t('auth_verify_needed_msg'));
-          return;
+        const verified = await session.refresh(credentials.user);
+        if (verified) {
+          await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
+        } else {
+          await AsyncStorage.removeItem('@vintra_creds');
+          setPassword('');
         }
-        const accepted = await acceptPendingInvitationsForUser(credentials.user).catch(() => 0);
-        if (accepted > 0) {
-          Alert.alert(t('auth_access_activated_title'), t('auth_access_activated_msg'));
-        }
-        await AsyncStorage.setItem('@vintra_creds', JSON.stringify({ email: email.trim(), password }));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('auth_generic_error');
-      Alert.alert(isRegister ? t('auth_registration_failed') : t('auth_sign_in_failed'), message);
+      setFeedback(error instanceof Error ? error.message : t('auth_generic_error'));
     } finally {
+      submitLock.current = false;
       setBusy(false);
     }
+  }
+
+  async function checkVerification() {
+    if (busy || checking) return;
+    setBusy(true);
+    setFeedback('');
+    try {
+      if (!(await session.refresh())) setFeedback(t('auth_verify_pending'));
+    } catch { /* The session publishes refresh errors separately from unverified status. */ }
+    finally { setBusy(false); }
+  }
+
+  async function resendVerification() {
+    if (!pendingUser || busy || checking) return;
+    if (Date.now() < resendAt) { setFeedback(t('auth_verify_cooldown')); return; }
+    setBusy(true);
+    setFeedback('');
+    try {
+      // Check first: an already verified account should never receive another link.
+      if (await session.refresh(pendingUser)) return;
+      await sendEmailVerification(pendingUser);
+      setResendAt(Date.now() + 60000);
+      setFeedback(t('auth_verify_msg'));
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : t('auth_generic_error'));
+    } finally { setBusy(false); }
+  }
+
+  async function useAnotherAccount() {
+    if (busy || checking) return;
+    setBusy(true);
+    try {
+      await signOutWithNotifications();
+      await AsyncStorage.removeItem('@vintra_creds');
+      setPassword('');
+      setFeedback('');
+      setResendAt(0);
+    } catch (error) { setFeedback(error instanceof Error ? error.message : t('auth_generic_error')); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -250,6 +216,22 @@ export function AuthScreen({ compact }: { compact: boolean }) {
           <ThemedText style={styles.brandSubline}>{t('auth_support_console')}</ThemedText>
         </View>
         <View style={styles.authCard}>
+          {pendingUser ? (
+            <View style={{ gap: 16 }}>
+              <SymbolView name={{ ios: 'envelope.badge', android: 'mark_email_read', web: 'mark_email_read' }} size={30} tintColor="#56dfb4" />
+              <Text style={styles.formTitle}>{checking ? t('auth_verify_checking') : session.status === 'error' ? t('auth_verify_check_failed') : t('auth_verify_title')}</Text>
+              <Text style={{ color: '#c4d4e3', fontSize: 14, lineHeight: 22 }}>{pendingUser.email}</Text>
+              <Text style={{ color: '#a9bdcf', fontSize: 14, lineHeight: 22 }}>{session.status === 'error' ? t('auth_verify_check_error') : t('auth_verify_needed_msg')}</Text>
+              {!!session.error && <Text accessibilityRole="alert" style={{ color: '#ffb6a3', fontSize: 13, lineHeight: 20 }}>{session.error}</Text>}
+              {!!feedback && <Text accessibilityLiveRegion="polite" style={{ color: '#a4e8d3', fontSize: 13, lineHeight: 20 }}>{feedback}</Text>}
+              <Pressable accessibilityRole="button" disabled={busy || checking} onPress={checkVerification} style={[styles.submitButton, (busy || checking) && styles.submitButtonBusy]}>
+                {busy || checking ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{t('auth_verify_check')}</Text>}
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={busy || checking} onPress={resendVerification} style={{ paddingVertical: 12, alignItems: 'center', opacity: busy || checking ? 0.5 : 1 }}><Text style={{ color: '#6edbbe', fontWeight: '700' }}>{t('auth_verify_resend')}</Text></Pressable>
+              <Pressable accessibilityRole="button" disabled={busy || checking} onPress={useAnotherAccount} style={{ paddingVertical: 12, alignItems: 'center' }}><Text style={{ color: '#b7c9d9' }}>{t('auth_verify_other_account')}</Text></Pressable>
+            </View>
+          ) : <>
+          {!!(feedback || session.error) && <Text accessibilityRole="alert" style={{ color: '#ffb6a3', fontSize: 13, lineHeight: 20, marginBottom: 12 }}>{feedback || session.error}</Text>}
           {isRegister && (
             <View style={styles.registerBanner}>
               <ThemedText style={styles.registerBannerTitle}>{t('auth_register_banner_title')}</ThemedText>
@@ -312,6 +294,7 @@ export function AuthScreen({ compact }: { compact: boolean }) {
               </>
             )}
           </Pressable>
+          </>}
         </View>
       </View>
     </View>
@@ -319,57 +302,14 @@ export function AuthScreen({ compact }: { compact: boolean }) {
 }
 
 function AdminBackground({ isLight }: { isLight?: boolean }) {
-  const move = useSharedValue(0);
-  const pulse = useSharedValue(1);
-
-  useEffect(() => {
-    move.value = withRepeat(withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.cubic) }), -1, true);
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1.018, { duration: 6200, easing: Easing.inOut(Easing.quad) }),
-        withTiming(1, { duration: 6200, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-      false,
-    );
-  }, [move, pulse]);
-
-  const aurora1 = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: -76 + move.value * 44 },
-      { translateY: -28 + move.value * 18 },
-      { rotateZ: '-12deg' },
-      { scale: pulse.value },
-    ],
-    opacity: 0.32 + move.value * 0.06,
-  }));
-
-  const aurora2 = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: 60 - move.value * 42 },
-      { translateY: 62 - move.value * 28 },
-      { rotateZ: '18deg' },
-      { scale: 1.02 - move.value * 0.02 },
-    ],
-    opacity: 0.24 + (1 - move.value) * 0.06,
-  }));
-
-  const aurora3 = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: -44 + move.value * 28 },
-      { translateY: 130 - move.value * 34 },
-      { rotateZ: '8deg' },
-      { scale: 0.98 + move.value * 0.03 },
-    ],
-  }));
-
   return (
     <View pointerEvents="none" style={styles.adminBackground}>
-      <View style={[styles.auroraBase, isLight && styles.auroraBaseLight]} />
-      <Animated.View style={[styles.auroraTeal, isLight && styles.auroraTealLight, aurora1]} />
-      <Animated.View style={[styles.auroraPurple, isLight && styles.auroraPurpleLight, aurora2]} />
-      <Animated.View style={[styles.auroraBlue, isLight && styles.auroraBlueLight, aurora3]} />
-      <View style={[styles.meshGradientOverlay, isLight && styles.meshGradientOverlayLight]} />
+      {isLight ? <View style={[StyleSheet.absoluteFill, { backgroundColor: '#f0f6f7' }]} /> : (
+        <>
+          <AuroraSky />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3,12,22,0.48)' }]} />
+        </>
+      )}
     </View>
   );
 }
@@ -380,6 +320,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const { colorScheme } = useThemePreference();
   const isLight = colorScheme === 'light';
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
+  const notificationRoute = useLocalSearchParams<{ chatId?: string; businessId?: string; notificationId?: string }>();
   const [allProfiles, setAllProfiles] = useState<AdminProfile[]>([]);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
@@ -388,6 +329,17 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialSelectedChatId ?? null);
   const [selectedChat, setSelectedChat] = useState<SupportChat | null>(null);
+  useEffect(() => {
+    if (!notificationRoute.chatId || !notificationRoute.businessId || !allProfiles.length) return;
+    const profile = allProfiles.find(item => item.businessId === notificationRoute.businessId);
+    if (!profile) return;
+    setAdminProfile(profile);
+    setSelectedWidgetKey('all');
+    setSelectedChatId(notificationRoute.chatId);
+    setSelectedChat(null);
+    setChatOpen(true);
+  }, [notificationRoute.chatId, notificationRoute.businessId, notificationRoute.notificationId, allProfiles, setChatOpen]);
+
   const [readLatestMessageIds, setReadLatestMessageIds] = useState<Record<string, string>>({});
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
@@ -402,8 +354,6 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [fetchedWidgets, setFetchedWidgets] = useState<Widget[]>([]);
   const [selectedWidgetKey, setSelectedWidgetKey] = useState<string>('all');
   const messageListRef = useRef<ScrollView>(null);
-  const knownLatestMessageIds = useRef<Record<string, string>>({});
-  const chatNotificationsReady = useRef(false);
   const supportTypingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportTypingChatId = useRef<string | null>(null);
   const supportTypingLastSentAt = useRef(0);
@@ -434,16 +384,15 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     fetchWidgets(adminProfile.businessId).then(async (ws: Widget[]) => {
       setFetchedWidgets(ws);
       // Apply the saved default widget key if it matches one of the fetched widgets
-      if (ws.length > 1) {
+      if (ws.length > 1 && notificationRoute.businessId !== adminProfile.businessId) {
         const saved = await AsyncStorage.getItem('@vintra_default_widget').catch(() => null);
         if (saved && ws.some(w => w.key === saved)) {
           setSelectedWidgetKey(saved);
         }
       }
     });
-  }, [adminProfile?.businessId]);
+  }, [adminProfile, notificationRoute.businessId]);
 
-  const displayName = adminProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Agent';
   const visibleChats = chats.filter((chat) => chat.status !== 'closed');
 
   // Full widget list: start from Firestore, append any widgetKeys seen in chats that aren't listed there
@@ -543,11 +492,13 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     }
   }, [chatOpen, selectedChatId, widgetChats]);
 
+  const openChatId = openChat?.id;
+  const openChatMessageCount = openChat?.messages.length;
   useEffect(() => {
-    if (openChat && messageListRef.current) {
-      setTimeout(() => messageListRef.current?.scrollToEnd({ animated: false }), 100);
-    }
-  }, [openChat?.id, openChat?.messages.length]);
+    if (!openChatId) return;
+    const timer = setTimeout(() => messageListRef.current?.scrollToEnd({ animated: false }), 100);
+    return () => clearTimeout(timer);
+  }, [openChatId, openChatMessageCount]);
 
   useEffect(() => {
     if (!openChat || (compact && !chatOpen)) return;
@@ -582,7 +533,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         setSupportTyping(adminProfile.businessId, supportTypingChatId.current, false).catch(() => {});
       }
     };
-  }, [adminProfile?.businessId]);
+  }, [adminProfile, notificationRoute.businessId]);
 
   function handleSelectChat(chatId: string) {
     setSelectedChatId(chatId);
@@ -631,9 +582,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     setAccessError('');
     setAdminProfile(null);
 
-    reload(user)
-      .catch(() => {})
-      .then(() => acceptPendingInvitationsForUser(user).catch(() => 0))
+    acceptPendingInvitationsForUser(user)
       .then(() => resolveAllAdminProfiles(user))
       .then((profiles) => {
         if (!mounted) return;
@@ -659,83 +608,16 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     };
   }, [user]);
 
-  const notifyNewChatMessage = useCallback(async (chat: SupportChat, message: SupportMessage) => {
-    if (AppState.currentState === 'active') {
-      return;
-    }
-
-    const [notificationsSetting, soundSetting, vibrationSetting] = await Promise.all([
-      AsyncStorage.getItem('@vintra_settings_notif').catch(() => null),
-      AsyncStorage.getItem('@vintra_settings_sound').catch(() => null),
-      AsyncStorage.getItem('@vintra_settings_vib').catch(() => null),
-    ]);
-
-    const notificationsEnabled = notificationsSetting === null ? true : notificationsSetting === 'true';
-    const soundEnabled = soundSetting === null ? true : soundSetting === 'true';
-    const vibrationEnabled = vibrationSetting === null ? true : vibrationSetting === 'true';
-
-    if (vibrationEnabled && Platform.OS !== 'web') {
-      Vibration.vibrate([0, 250, 120, 250]);
-    }
-
-    if (!notificationsEnabled) {
-      return;
-    }
-
-    const title = chat.visitorName || chat.pageTitle || 'New customer message';
-    const body = message.text || chat.preview || 'A customer sent a new message.';
-    await sendLocalNotification(title, body, soundEnabled);
-  }, []);
-
   useEffect(() => {
-    if (!adminProfile) {
-      return undefined;
-    }
-
-    AsyncStorage.getItem('@vintra_settings_notif')
-      .then((setting) => {
-        const enabled = setting === null ? true : setting === 'true';
-        if (enabled) {
-          registerPushToken(user.uid, adminProfile.businessId).catch(() => {});
-        }
-      })
-      .catch(() => {});
-
-    knownLatestMessageIds.current = {};
-    chatNotificationsReady.current = false;
+    if (!adminProfile) return;
     setChatsLoading(true);
     setAccessError('');
-
-    return listenSupportChats(
-      adminProfile.businessId,
-      (nextChats) => {
-        const previousLatest = knownLatestMessageIds.current;
-        const nextLatest: Record<string, string> = {};
-
-        nextChats.forEach((chat) => {
-          const latestMessage = chat.messages.at(-1);
-          if (!latestMessage) return;
-
-          nextLatest[chat.id] = latestMessage.id;
-
-          const isNewLatest = previousLatest[chat.id] !== latestMessage.id;
-          if (chatNotificationsReady.current && isNewLatest && latestMessage.role === 'user') {
-            notifyNewChatMessage(chat, latestMessage).catch(() => {});
-          }
-        });
-
-        knownLatestMessageIds.current = nextLatest;
-        chatNotificationsReady.current = true;
-        setChats(nextChats);
-        setChatsLoading(false);
-        setSelectedChatId((current) => current || nextChats[0]?.id || null);
-      },
-      (error) => {
-        setAccessError(error.message);
-        setChatsLoading(false);
-      },
-    );
-  }, [adminProfile, notifyNewChatMessage, user.uid]);
+    return listenSupportChats(adminProfile.businessId, nextChats => {
+      setChats(nextChats);
+      setChatsLoading(false);
+      setSelectedChatId(current => current || nextChats[0]?.id || null);
+    }, error => { setAccessError(error.message); setChatsLoading(false); });
+  }, [adminProfile]);
 
   useEffect(() => {
     if (!adminProfile || !selectedChatId) {
@@ -760,8 +642,12 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   }, [adminProfile, selectedChatId, selectedChat?.id]);
 
   async function handleSignOut() {
-    await signOut(firebaseAuth);
-    await AsyncStorage.removeItem('@vintra_creds');
+    try {
+      await signOutWithNotifications();
+      await AsyncStorage.removeItem('@vintra_creds');
+    } catch (error) {
+      Alert.alert('Could not sign out', error instanceof Error ? error.message : 'Please retry.');
+    }
   }
 
   async function handleSendReply() {
@@ -1372,37 +1258,6 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   );
 }
 
-function InboxMetric({ label, value, active }: { label: string; value: string; active?: boolean }) {
-  // Electric neon colors for different metrics
-  const neonColor = 
-    label === 'Waiting' ? '#ef4444' : 
-    label === 'Active' ? '#3b82f6' : '#00c7db';
-
-  return (
-    <View style={[
-      styles.inboxMetric, 
-      active && styles.inboxMetricActive,
-      { borderColor: active ? neonColor + '80' : 'rgba(255,255,255,0.08)' }
-    ]}>
-      {/* Soft inner glow overlay */}
-      <View style={[styles.metricGlow, { backgroundColor: neonColor }]} />
-      <Text style={[styles.inboxMetricValue, { color: active ? neonColor : '#ffffff' }]}>{value}</Text>
-      <Text style={styles.inboxMetricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function ConversationSection({ title, count, urgent }: { title: string; count: number; urgent?: boolean }) {
-  return (
-    <View style={styles.conversationSection}>
-      <ThemedText style={[styles.conversationSectionText, urgent && styles.conversationSectionUrgent]}>{title}</ThemedText>
-      <View style={[styles.conversationSectionBadge, urgent && styles.conversationSectionBadgeUrgent]}>
-        <ThemedText style={[styles.conversationSectionBadgeText, urgent && styles.conversationSectionBadgeTextUrgent]}>{count}</ThemedText>
-      </View>
-    </View>
-  );
-}
-
 function MobileInboxTab({ icon, label, active, badge, showBadge = true, onPress }: { icon: AppSymbolName; label: string; active: boolean; badge: number; showBadge?: boolean; onPress: () => void }) {
   return (
     <Pressable
@@ -1438,13 +1293,6 @@ function StatusPill({ status }: { status: string }) {
 function avatarColor(name: string): string {
   const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
   return colors[(name.charCodeAt(0) + (name.length || 0)) % colors.length];
-}
-
-function statusLabel(status: string): string {
-  if (status === 'needs-human') return 'New';
-  if (status === 'open') return 'Returning';
-  if (status === 'ai-active') return 'AI';
-  return 'Active';
 }
 
 function TypewriterText({ text, style }: { text: string; style: any }) {
@@ -1626,7 +1474,6 @@ function formatDateShort(date: Date) {
 }
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
   const { colorScheme } = useThemePreference();
   const { width } = useWindowDimensions();
   const compact = width < 760;
@@ -1641,10 +1488,6 @@ export default function HomeScreen() {
 
   const [selectedChatIdForModal, setSelectedChatIdForModal] = useState<string | null>(null);
 
-  const contentPadding = useMemo(
-    () => ({ paddingTop: insets.top + Spacing.three, paddingBottom: insets.bottom + BottomTabInset + Spacing.five }),
-    [insets.bottom, insets.top],
-  );
 
   useEffect(() => {
     setTabsHidden(compact && chatOpen);
@@ -1655,7 +1498,6 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={[styles.container, colorScheme === 'light' && styles.containerLight]}>
-      <AnimatedBackdrop />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}

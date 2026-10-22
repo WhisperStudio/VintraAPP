@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { firebaseAuth } from '@/lib/firebase';
 
 import { ThemedText } from '@/components/themed-text';
@@ -18,7 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTranslation, type RawLang } from '@/lib/i18n';
 import { resolveAllAdminProfiles, fetchWidgets, type AdminProfile, type Widget } from '@/lib/admin-chat';
-import { requestNotificationAccess } from '@/lib/notifications';
+import { requestNotificationAccess, saveNotificationPreferences, syncNotificationDevice, signOutWithNotifications, useNotificationDevice, sendLocalNotification } from '@/lib/notifications';
 import { useThemePreference, type ThemePreference } from '@/lib/theme-preference';
 import {
   getDefaultQuickReplies,
@@ -93,6 +93,7 @@ export default function SettingsScreen() {
   const { savedTheme, colorScheme, setTheme } = useThemePreference();
   const isLight = colorScheme === 'light';
   const [user, setUser] = useState<User | null>(null);
+  const device = useNotificationDevice();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
@@ -129,30 +130,22 @@ export default function SettingsScreen() {
     loadQuickReplies(lang).then(setQuickReplies).catch(() => setQuickReplies(getDefaultQuickReplies(lang)));
   }, [lang]);
 
+  const updatePreference = async (patch: { enabled?: boolean; sound?: boolean; vibration?: boolean }) => {
+    try { await saveNotificationPreferences(patch); }
+    catch (error) { Alert.alert('Notification settings', error instanceof Error ? error.message : 'Could not sync this device.'); }
+  };
   const toggleNotifications = async (val: boolean) => {
-    if (val) {
-      const result = await requestNotificationAccess().catch((error: unknown) => ({
-        granted: false,
-        message: error instanceof Error ? error.message : 'Could not enable notifications.',
-      }));
-      if (!result.granted) {
-        Alert.alert(t('settings_notif_label'), result.message);
-        setNotificationsEnabled(false);
-        AsyncStorage.setItem('@vintra_settings_notif', 'false').catch(console.error);
-        return;
+    try {
+      if (val) {
+        const access = await requestNotificationAccess();
+        if (!access.granted) { Alert.alert('Notifications', access.message); return; }
       }
-    }
-    setNotificationsEnabled(val);
-    AsyncStorage.setItem('@vintra_settings_notif', String(val)).catch(console.error);
+      setNotificationsEnabled(val);
+      await updatePreference({ enabled: val });
+    } catch (error) { Alert.alert('Notifications', String(error)); }
   };
-  const toggleSound = async (val: boolean) => {
-    setSoundEnabled(val);
-    AsyncStorage.setItem('@vintra_settings_sound', String(val)).catch(console.error);
-  };
-  const toggleVibration = async (val: boolean) => {
-    setVibrationEnabled(val);
-    AsyncStorage.setItem('@vintra_settings_vib', String(val)).catch(console.error);
-  };
+  const toggleSound = async (val: boolean) => { setSoundEnabled(val); await updatePreference({ sound: val }); };
+  const toggleVibration = async (val: boolean) => { setVibrationEnabled(val); await updatePreference({ vibration: val }); };
   const toggleQuickReplies = async (val: boolean) => {
     setQuickRepliesEnabled(val);
     saveQuickRepliesEnabled(val).catch(console.error);
@@ -233,9 +226,9 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await AsyncStorage.removeItem('@vintra_creds');
-              await signOut(firebaseAuth);
+              await signOutWithNotifications();
             } catch (error) {
-              console.error('Sign out error:', error);
+              Alert.alert('Could not sign out', error instanceof Error ? error.message : 'Please retry.');
             }
           },
         },
@@ -274,6 +267,22 @@ export default function SettingsScreen() {
         {/* Notifications */}
         <View style={[styles.panel, isLight && styles.panelLight]}>
           <ThemedText style={[styles.sectionTitle, isLight && styles.sectionTitleLight]}>{t('settings_section_notif')}</ThemedText>
+          <ThemedText style={{ fontSize: 13, marginBottom: 12 }}>{device.message}</ThemedText>
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 14 }}>
+            <Pressable accessibilityRole="button" disabled={device.status === 'registering'} onPress={() => syncNotificationDevice(true).catch(error => Alert.alert('Notifications', error.message))}>
+              <ThemedText style={{ color: '#16a887', fontWeight: '700' }}>Connect device</ThemedText>
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={!notificationsEnabled} onPress={async () => {
+              try {
+                const permission = await requestNotificationAccess();
+                if (!permission.granted) throw new Error(permission.message);
+                await sendLocalNotification('Your test alert', 'Your Vintra notification preview is working.', soundEnabled);
+              } catch (error) { Alert.alert('Notifications', error instanceof Error ? error.message : 'Test failed.'); }
+            }}>
+              <ThemedText style={{ color: '#16a887', fontWeight: '700', opacity: notificationsEnabled ? 1 : 0.4 }}>Test alert</ThemedText>
+            </Pressable>
+          </View>
+
           <View style={[styles.divider, isLight && styles.dividerLight]} />
           <SettingRow
             icon={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}

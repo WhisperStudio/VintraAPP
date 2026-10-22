@@ -153,7 +153,7 @@ function normalizeRole(role: unknown): SupportMessage['role'] {
 
 function mapMessage(value: Record<string, unknown>): SupportMessage {
   return {
-    id: String(value.id || randomId()),
+    id: String(value.id || JSON.stringify([value.role || 'user', value.text || '', value.createdAt || ''])),
     role: normalizeRole(value.role),
     text: String(value.text || ''),
     createdAt: toDate(value.createdAt),

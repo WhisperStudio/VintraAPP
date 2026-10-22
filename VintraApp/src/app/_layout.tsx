@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { onAuthStateChanged, reload, signInWithEmailAndPassword } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,16 +8,19 @@ import { AuthScreen, AuthAuroraBackdrop } from './index';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { NotificationLifecycle } from '@/components/notification-lifecycle';
 import { VintraChatWidget } from '@/components/vintra-chat-widget';
 import { WelcomeTutorial } from '@/components/welcome-tutorial';
-import { firebaseAuth } from '@/lib/firebase';
+import { AuthSessionProvider, useAuthSession } from '@/lib/auth-session';
 import { LanguageProvider, useTranslation } from '@/lib/i18n';
 import { ThemePreferenceProvider, useThemePreference, type ThemePreference } from '@/lib/theme-preference';
 
 export default function RootLayout() {
   return (
     <ThemePreferenceProvider>
-      <RootLayoutContent />
+      <AuthSessionProvider>
+        <RootLayoutContent />
+      </AuthSessionProvider>
     </ThemePreferenceProvider>
   );
 }
@@ -28,8 +30,8 @@ function RootLayoutContent() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const compact = width < 760;
-  const [user, setUser] = useState<import('firebase/auth').User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const { user, status: authStatus } = useAuthSession();
+  const authReady = authStatus !== 'loading';
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -38,44 +40,7 @@ function RootLayoutContent() {
       .catch(() => setOnboarded(false));
   }, []);
 
-  useEffect(() => {
-    const unsubAuth = onAuthStateChanged(firebaseAuth, (currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-      // Refresh the user's emailVerified status — the initial auth state may
-      // carry a stale ID token where emailVerified is still false.
-      if (currentUser) {
-        reload(currentUser)
-          .then(() => setUser(firebaseAuth.currentUser))
-          .catch(() => {});
-      }
-    });
-
-    AsyncStorage.getItem('@vintra_creds').then((raw) => {
-      if (!raw) return;
-      const { email, password } = JSON.parse(raw) as { email: string; password: string };
-      if (!firebaseAuth.currentUser) {
-        signInWithEmailAndPassword(firebaseAuth, email, password).catch(() =>
-          AsyncStorage.removeItem('@vintra_creds'),
-        );
-      }
-    }).catch(() => {});
-
-    return unsubAuth;
-  }, []);
-
-  // Never keep saved credentials for an unverified account, so stale sessions
-  // from older builds can't auto-login into a broken, access-less state.
-  useEffect(() => {
-    if (authReady && user && !user.emailVerified) {
-      AsyncStorage.removeItem('@vintra_creds').catch(() => {});
-    }
-  }, [authReady, user]);
-
-  // Only treat a user as logged in once their email is verified. This mirrors
-  // the website and prevents freshly-registered (unverified) accounts from being
-  // dropped into a broken, access-less dashboard.
-  const isLoggedIn = authReady && themeReady && !!user && !!user.emailVerified;
+  const isLoggedIn = authStatus === 'verified' && themeReady && !!user;
   const showThemePrompt = isLoggedIn && !savedTheme;
   const showTutorial = isLoggedIn && !!savedTheme && onboarded === false;
   const tutorialName = user?.displayName?.trim() || user?.email?.split('@')[0] || '';
@@ -100,6 +65,7 @@ function RootLayoutContent() {
       ) : isLoggedIn ? (
         <>
           <AppTabs />
+          <NotificationLifecycle user={user!} />
           <ThemeChoiceModal visible={showThemePrompt} onChoose={chooseTheme} />
           <WelcomeTutorial visible={showTutorial} displayName={tutorialName} onDone={finishTutorial} />
         </>
