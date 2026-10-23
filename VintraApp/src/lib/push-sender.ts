@@ -1,7 +1,9 @@
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { firebaseApp } from '@/lib/firebase';
+import { firebaseAuth } from '@/lib/firebase';
+import { requestNotificationApi } from '@/lib/notification-api';
 
-const functions = getFunctions(firebaseApp, 'us-central1');
+const endpoint =
+  process.env.EXPO_PUBLIC_NOTIFICATION_API_URL ||
+  'https://chat.vintrastudio.com/api/notifications';
 export type NotificationLog = {
   id: string;
   title: string;
@@ -26,21 +28,16 @@ export async function callNotificationService<T>(
   name: string,
   data: unknown,
 ): Promise<T> {
-  try {
-    return (await httpsCallable<unknown, T>(functions, name)(data)).data;
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (
-      code === 'functions/not-found' ||
-      code === 'functions/unavailable' ||
-      code === 'functions/internal'
-    ) {
-      throw new Error(
-        'The notification service is unavailable. Check that the Firebase notification functions are deployed, then retry.',
-      );
-    }
-    throw error;
-  }
+  const user = firebaseAuth.currentUser;
+  if (!user) throw new Error('Sign in to connect notifications.');
+  return requestNotificationApi<T>(name, data, {
+    endpoint,
+    getToken: async (refresh) => {
+      if (firebaseAuth.currentUser !== user)
+        throw new Error('Your account changed. Please try again.');
+      return user.getIdToken(refresh);
+    },
+  });
 }
 export const loadNotificationCenter = () =>
   callNotificationService<NotificationCenter>('notificationCenter', {});

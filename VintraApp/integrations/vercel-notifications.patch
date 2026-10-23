@@ -1,0 +1,1368 @@
+diff --git a/my-app/package.json b/my-app/package.json
+index 50a692e..b5e4cc9 100644
+--- a/my-app/package.json
++++ b/my-app/package.json
+@@ -5,7 +5,8 @@
+   "scripts": {
+     "dev": "next dev",
+     "build": "next build",
+-    "start": "next start"
++    "start": "next start",
++    "test:notifications": "node --test tests/notifications.test.mjs"
+   },
+   "dependencies": {
+     "@types/styled-components": "^5.1.36",
+diff --git a/my-app/src/app/api/widget/chat/route.ts b/my-app/src/app/api/widget/chat/route.ts
+index 9ee7090..c9e65d7 100644
+--- a/my-app/src/app/api/widget/chat/route.ts
++++ b/my-app/src/app/api/widget/chat/route.ts
+@@ -1,3 +1,4 @@
++import { saveChatWithNotifications } from '@/lib/notifications.server'
+ import { NextRequest, NextResponse } from 'next/server'
+ import { FieldValue } from 'firebase-admin/firestore'
+ import { adminDb } from '@/lib/firebase-admin'
+@@ -10,6 +11,8 @@ import { createWidgetCaptchaChallenge, verifyWidgetCaptchaToken } from '@/lib/wi
+ import { getGeminiModelCandidates } from '@/lib/gemini-models.server'
+ import { getAnalyticsDayKey, getAnalyticsHourKey } from '@/lib/chat-analytics'
+ 
++export const maxDuration = 180
++
+ function corsHeaders(origin?: string | null) {
+   return {
+     'Access-Control-Allow-Origin': origin || '*',
+@@ -920,7 +923,7 @@ export async function POST(req: NextRequest) {
+       const isNewSupportChat = !supportChatSnap.exists
+       const statPaths = buildDailyStatUpdatePaths(now, countryCode)
+ 
+-      await supportChatRef.set(
++      await saveChatWithNotifications(supportChatRef,
+         {
+           sessionId,
+           widgetKey,
+@@ -946,7 +949,7 @@ export async function POST(req: NextRequest) {
+             : FieldValue.serverTimestamp(),
+           updatedAt: FieldValue.serverTimestamp(),
+         },
+-        { merge: true }
++        [userSupportMessage]
+       )
+ 
+       const analyticsUpdates: Record<string, unknown> = {
+@@ -1095,7 +1098,7 @@ export async function POST(req: NextRequest) {
+         ? [...existingSupportChat.messages, nextSupportMessage]
+         : [nextSupportMessage]
+ 
+-      await supportChatRef.set(
++      await saveChatWithNotifications(supportChatRef,
+         {
+           sessionId,
+           widgetKey,
+@@ -1118,7 +1121,8 @@ export async function POST(req: NextRequest) {
+           createdAt: existingSupportChat.createdAt || FieldValue.serverTimestamp(),
+           updatedAt: FieldValue.serverTimestamp(),
+         },
+-        { merge: true }
++        [nextSupportMessage],
++        true,
+       )
+ 
+       await businessRef.update({
+@@ -1203,7 +1207,7 @@ export async function POST(req: NextRequest) {
+         analyticsUpdates['chatAnalytics.aiOnlySessions'] = FieldValue.increment(-1)
+       }
+ 
+-      await supportChatRef.set(
++      await saveChatWithNotifications(supportChatRef,
+         {
+           sessionId,
+           widgetKey,
+@@ -1229,10 +1233,10 @@ export async function POST(req: NextRequest) {
+             : FieldValue.serverTimestamp(),
+           updatedAt: FieldValue.serverTimestamp(),
+         },
+-        { merge: true }
++        [messageTimeline[history.length]]
+       )
+     } else if (existingSupportChat) {
+-      await supportChatRef.set(
++      await saveChatWithNotifications(supportChatRef,
+         {
+           sessionId,
+           widgetKey,
+@@ -1258,7 +1262,7 @@ export async function POST(req: NextRequest) {
+           createdAt: existingSupportChat.createdAt || FieldValue.serverTimestamp(),
+           updatedAt: FieldValue.serverTimestamp(),
+         },
+-        { merge: true }
++        [messageTimeline[history.length]]
+       )
+     } else {
+       await persistAiOnlyChatLog({
+diff --git a/my-app/src/app/api/widget/support/route.ts b/my-app/src/app/api/widget/support/route.ts
+index a122ee5..1f789a3 100644
+--- a/my-app/src/app/api/widget/support/route.ts
++++ b/my-app/src/app/api/widget/support/route.ts
+@@ -8,6 +8,10 @@ import { authorizeWidgetRequest, getOrCreateWidgetEmbedSecret } from '@/lib/widg
+ import { createWidgetCaptchaChallenge, verifyWidgetCaptchaToken } from '@/lib/widget-captcha.server'
+ import { getAnalyticsHourKey, getAnalyticsDayKey } from '@/lib/chat-analytics'
+ 
++import { saveChatWithNotifications } from '@/lib/notifications.server'
++
++export const maxDuration = 180
++
+ const MAX_WIDGET_MESSAGE_CHARS = 300
+ 
+ function corsHeaders(origin?: string | null) {
+@@ -381,8 +385,7 @@ export async function POST(req: NextRequest) {
+ 
+     const existingMessages = Array.isArray(data.messages) ? data.messages : []
+     const alreadyStored = existingMessages.some((entry: any) => String(entry?.id || '') === nextMessageId)
+-    const mergedMessages = alreadyStored ? existingMessages : [...existingMessages, nextMessage]
+-    await chatRef.set(
++    await saveChatWithNotifications(chatRef,
+       {
+         sessionId,
+         businessId: business.id,
+@@ -397,14 +400,15 @@ export async function POST(req: NextRequest) {
+         pageTitle: data.pageTitle || null,
+         pageUrl: data.pageUrl || null,
+         messageCount: FieldValue.increment(alreadyStored ? 0 : 1),
+-        messages: mergedMessages,
++        messages: alreadyStored ? existingMessages : FieldValue.arrayUnion(nextMessage),
+         supportRequestedAt: data.supportRequestedAt || FieldValue.serverTimestamp(),
+         visitorTypingAt: FieldValue.delete(),
+         visitorTypingBy: FieldValue.delete(),
+         createdAt: data.createdAt || FieldValue.serverTimestamp(),
+         updatedAt: FieldValue.serverTimestamp(),
+       },
+-      { merge: true }
++      [nextMessage],
++      true,
+     )
+ 
+     await businessRef.update({
+diff --git a/my-app/NOTIFICATIONS.md b/my-app/NOTIFICATIONS.md
+new file mode 100644
+index 0000000..dbe4a48
+--- /dev/null
++++ b/my-app/NOTIFICATIONS.md
+@@ -0,0 +1,82 @@
++# Notifications on the existing Vercel project
++
++This implementation targets `vintrachat-xoxo` (team `vintrastudios-projects`), domain
++`https://chat.vintrastudio.com`, repository `WhisperStudio/vintrachat_xoxo`, app root `my-app`.
++The starting production commit was `791257323af5afb15a68134a6bc34cf038cbe90d`.
++
++## What changes
++
++- `POST /api/notifications` verifies Firebase ID tokens (including revocation and email verification).
++  It provides device registration, unregistration, administrator announcement sending and history.
++  Native apps can call it without an Origin header; browser origins are explicitly allowed.
++- Widget support and chat routes save each accepted **support-chat visitor message** and its
++  notification job in one Firestore transaction. Only the current server-accepted visitor message
++  is queued; replayed browser history and AI/staff replies do not generate alerts.
++- Next.js `after()` sends jobs through Expo after responding. There is no Firebase Functions,
++  Cloud Scheduler, Vercel Cron, Workflow or additional paid service dependency.
++- A transaction lease prevents concurrent workers from processing a job together. Persisted
++  device attempts prevent resending accepted tickets on a normal retry. A crash between Expo
++  acceptance and recording the result can still duplicate a notification.
++- Every notification API call or new support message attempts pending work and receipt checks
++  within a bounded 120-second budget. **There is no periodic scheduler:** if traffic stops after
++  a transient failure, retries and receipt updates wait for the next relevant request. Provider
++  receipts also expire; this is not a guarantee of immediate recovery or exactly-once delivery.
++- Existing AI-only chat logs (`aiChatLogs`), task forms and feedback are outside this support-chat
++  flow. App notification taps open `supportChats`. Direct client/console writes to Firestore do
++  not trigger notifications. Any additional message writer must call the server helper.
++
++## Activation is blocked by the current production Firestore rules
++
++Read-only inspection on 23 October 2026 found a recursive `allow read, write: if true` rule.
++Do not enable notifications under it: it exposes device tokens and jobs, and lets anyone forge
++business ownership and staff memberships used by notification authorization.
++
++`VINTRA_NOTIFICATIONS_ENABLED` defaults to off. While off, existing chat saving continues,
++no notification data is created/sent, and the API returns an explicit unavailable response.
++
++Before enabling, migrate and test database access for **both the mobile app and website**:
++
++1. Deny all client access to `notificationDevices`, `notificationJobs` and their `attempts`,
++   `notificationAnnouncements`, and `notificationReceipts`. Server Admin SDK access continues.
++2. Protect `businesses.ownerId`, `businesses/{id}/users`, and invitation creation/acceptance from
++   unauthorized changes. An authenticated-only wildcard is insufficient. Existing clients scan
++   all businesses and accept invitations by writing membership directly, so changing the rules
++   in isolation would break flows. Move discovery and invitation acceptance to authenticated
++   server APIs or implement compatible, tested queries and constrained writes first.
++3. Protect widget embed secrets and server rate-limit/auth records; review the website's existing
++   account setup and password reset flows. Do not paste a blanket deny rule into production.
++4. Verify anonymous access, cross-business access, ownership changes, forged invitations, visitor
++   chat saving, staff replies, new account creation and legitimate invitation acceptance in the
++   Firebase emulator before applying rules. The mock tests below are not rules-emulator tests.
++
++No production rules, environment variables, billing settings or deployments were modified.
++
++## Deployment once the access migration is verified
++
++Reuse existing server-only `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, and
++`FIREBASE_PRIVATE_KEY` configuration. Never place these values in the mobile app or in
++`NEXT_PUBLIC_*` / `EXPO_PUBLIC_*` variables. Use `EXPO_ACCESS_TOKEN` only if Expo push security
++requires it. Set `VINTRA_NOTIFICATIONS_ENABLED=true` only after the rules migration passes.
++Optional `NOTIFICATION_WEB_ORIGINS` is a comma-separated list of additional browser origins.
++
++Deploy the website branch to the **existing** Vercel project with root directory `my-app`.
++The routes use `maxDuration=180`; confirm Fluid Compute is enabled on that project.
++Do not deploy the legacy mobile repo `functions/` codebase alongside this implementation.
++
++The updated mobile app defaults to `https://chat.vintrastudio.com/api/notifications`.
++`EXPO_PUBLIC_NOTIFICATION_API_URL` can override it at build time with a trusted HTTPS API.
++Publish a new native/TestFlight build; the installed old build still calls Firebase Functions.
++Users must open the new build and connect notifications once. APNs credentials must still
++be configured for the existing Expo project and iOS bundle.
++
++Expo push delivery has no fee. Vercel and Firestore usage still counts against the existing
++plan quotas. No plan was upgraded and no guarantee of unlimited free usage is implied.
++Vercel Hobby is intended for personal/non-commercial use; use a plan appropriate to the site.
++
++## Validation
++
++From `my-app`, run `node --test tests/notifications.test.mjs`, `npx tsc --noEmit`, and
++`npm run build`. The tests use an isolated in-memory Firestore fake and mocked Expo responses;
++no credentials or real device tokens are used. Validate actual background and terminated-app
++push delivery, opt-out, sign-out, business access revocation and tap routing on a phone only
++once the server is deployed and protected. A successful test build is not device delivery proof.
+diff --git a/my-app/src/app/api/notifications/route.ts b/my-app/src/app/api/notifications/route.ts
+new file mode 100644
+index 0000000..679ca68
+--- /dev/null
++++ b/my-app/src/app/api/notifications/route.ts
+@@ -0,0 +1,31 @@
++import { getAdminAuth } from '@/lib/firebase-admin';
++import {
++  notificationService,
++  notificationsEnabled,
++  scheduleNotificationDelivery,
++} from '@/lib/notifications.server';
++import { createNotificationHandler } from '@/lib/notifications/http.mjs';
++
++export const maxDuration = 180;
++
++const handle = createNotificationHandler({
++  verifyToken: (token: string) => getAdminAuth().verifyIdToken(token, true),
++  service: notificationService,
++  schedule: scheduleNotificationDelivery,
++  enabled: notificationsEnabled,
++  origins: [
++    'https://chat.vintrastudio.com',
++    'https://vintranordic.com',
++    'https://www.vintranordic.com',
++    ...(process.env.NOTIFICATION_WEB_ORIGINS || '')
++      .split(',')
++      .map((origin) => origin.trim())
++      .filter(Boolean),
++    ...(process.env.NODE_ENV === 'development'
++      ? ['http://localhost:8081', 'http://localhost:3000']
++      : []),
++  ],
++});
++
++export const POST = handle;
++export const OPTIONS = handle;
+diff --git a/my-app/src/lib/notifications.server.ts b/my-app/src/lib/notifications.server.ts
+new file mode 100644
+index 0000000..5f4b9db
+--- /dev/null
++++ b/my-app/src/lib/notifications.server.ts
+@@ -0,0 +1,40 @@
++import { after } from 'next/server';
++import type { DocumentReference, DocumentData } from 'firebase-admin/firestore';
++import { getAdminDb } from '@/lib/firebase-admin';
++import { createNotificationService } from './notifications/service.mjs';
++
++export const notificationsEnabled = () =>
++  process.env.VINTRA_NOTIFICATIONS_ENABLED === 'true';
++
++export function notificationService() {
++  return createNotificationService(getAdminDb(), {
++    accessToken: process.env.EXPO_ACCESS_TOKEN || '',
++  });
++}
++
++export function scheduleNotificationDelivery(work: () => Promise<void>) {
++  after(async () => {
++    try {
++      await work();
++    } catch {
++      console.error(
++        'Notification maintenance failed; pending jobs remain stored.',
++      );
++    }
++  });
++}
++
++export async function saveChatWithNotifications(
++  ref: DocumentReference,
++  data: DocumentData,
++  messages: { id?: string; role: string; text: string; createdAt?: string }[],
++  append = false,
++) {
++  if (!notificationsEnabled()) {
++    await ref.set(data, { merge: true });
++    return;
++  }
++  const service = notificationService();
++  const ids = await service.saveChat(ref, data, messages, append);
++  scheduleNotificationDelivery(() => service.drain(ids));
++}
+diff --git a/my-app/src/lib/notifications/core.mjs b/my-app/src/lib/notifications/core.mjs
+new file mode 100644
+index 0000000..ef00335
+--- /dev/null
++++ b/my-app/src/lib/notifications/core.mjs
+@@ -0,0 +1,42 @@
++import { createHash } from 'node:crypto';
++
++export const hash = (value) => createHash('sha256').update(value).digest('hex');
++export const validToken = (token) =>
++  typeof token === 'string' &&
++  /^(ExponentPushToken|ExpoPushToken)\[[\w-]+\]$/.test(token);
++export const isSuperAdmin = (token) =>
++  token?.email_verified === true &&
++  (token.superAdmin === true ||
++    token.email?.toLowerCase() === 'vintrastudio@gmail.com');
++export const isMember = (business, membership, uid) =>
++  business?.ownerId === uid ||
++  (membership &&
++    ['owner', 'admin', 'support'].includes(membership.role) &&
++    (membership.status || 'active') === 'active');
++export function messageKey(message) {
++  return String(
++    message.id ||
++      hash(JSON.stringify([message.role, message.text, message.createdAt])),
++  );
++}
++export function incomingMessages(before, after) {
++  const seen = new Set((before?.messages || []).map(messageKey));
++  return (after?.messages || []).filter((message) => {
++    const key = messageKey(message);
++    if (seen.has(key)) return false;
++    seen.add(key);
++    return (
++      (!message.role || message.role === 'user') &&
++      typeof message.text === 'string' &&
++      message.text.trim()
++    );
++  });
++}
++export function channelId(sound = true, vibration = true) {
++  return `messages-${sound ? 'sound' : 'silent'}-${vibration ? 'vibrate' : 'still'}`;
++}
++export function deliveryStatus(total, accepted, failed) {
++  if (!total) return 'no-recipients';
++  if (!failed) return 'accepted';
++  return accepted ? 'partial' : 'failed';
++}
+diff --git a/my-app/src/lib/notifications/http.mjs b/my-app/src/lib/notifications/http.mjs
+new file mode 100644
+index 0000000..e98da66
+--- /dev/null
++++ b/my-app/src/lib/notifications/http.mjs
+@@ -0,0 +1,132 @@
++import { NotificationError } from './service.mjs';
++
++const actions = new Set([
++  'registerNotificationDevice',
++  'unregisterNotificationDevice',
++  'notificationCenter',
++  'queueAnnouncement',
++]);
++const statuses = {
++  unauthenticated: 401,
++  'permission-denied': 403,
++  'invalid-argument': 400,
++  'not-found': 404,
++  unavailable: 503,
++};
++
++export function createNotificationHandler({
++  verifyToken,
++  service,
++  schedule,
++  enabled,
++  origins,
++}) {
++  return async function handle(request) {
++    const origin = request.headers.get('origin');
++    const headers = { 'Cache-Control': 'no-store', Vary: 'Origin' };
++    if (origin && !origins.includes(origin))
++      return Response.json(
++        { error: { message: 'Origin not allowed.' } },
++        { status: 403, headers },
++      );
++    if (origin) headers['Access-Control-Allow-Origin'] = origin;
++    headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
++    headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
++    const reply = (value, status = 200) =>
++      Response.json(value, { status, headers });
++    if (request.method === 'OPTIONS')
++      return new Response(null, { status: 204, headers });
++    if (request.method !== 'POST')
++      return reply({ error: { message: 'Use POST.' } }, 405);
++    if (!enabled())
++      return reply(
++        {
++          error: {
++            code: 'unavailable',
++            message:
++              'Notifications are not activated yet. Please try again later.',
++          },
++        },
++        503,
++      );
++    try {
++      const bearer = request.headers
++        .get('authorization')
++        ?.match(/^Bearer (\S+)$/i)?.[1];
++      if (!bearer)
++        throw new NotificationError(
++          'unauthenticated',
++          'Sign in to connect notifications.',
++        );
++      let token;
++      try {
++        token = await verifyToken(bearer);
++      } catch {
++        throw new NotificationError(
++          'unauthenticated',
++          'Your session expired. Sign in again.',
++        );
++      }
++      if (token.email_verified !== true)
++        throw new NotificationError(
++          'permission-denied',
++          'Verify your email before connecting notifications.',
++        );
++      if (Number(request.headers.get('content-length')) > 16384)
++        return reply({ error: { message: 'Request too large.' } }, 413);
++      const raw = await request.text();
++      if (new TextEncoder().encode(raw).length > 16384)
++        return reply({ error: { message: 'Request too large.' } }, 413);
++      let input;
++      try {
++        input = JSON.parse(raw);
++      } catch {
++        throw new NotificationError(
++          'invalid-argument',
++          'Invalid JSON request.',
++        );
++      }
++      if (
++        !input ||
++        !actions.has(input.action) ||
++        !input.data ||
++        typeof input.data !== 'object' ||
++        Array.isArray(input.data)
++      ) {
++        throw new NotificationError(
++          'invalid-argument',
++          'Invalid notification request.',
++        );
++      }
++      const api = service();
++      const result = await api[input.action]({
++        auth: { uid: token.uid, token },
++        data: input.data,
++      });
++      schedule(() =>
++        api.drain(input.action === 'queueAnnouncement' ? result.id : undefined),
++      );
++      return reply({ data: result });
++    } catch (error) {
++      if (error instanceof NotificationError)
++        return reply(
++          { error: { code: error.code, message: error.message } },
++          statuses[error.code] || 400,
++        );
++      // Do not expose credentials, Firestore internals or notification tokens.
++      console.error(
++        'Notification request failed',
++        error?.code || error?.name || 'UnknownError',
++      );
++      return reply(
++        {
++          error: {
++            code: 'internal',
++            message: 'Could not connect notifications. Please try again.',
++          },
++        },
++        500,
++      );
++    }
++  };
++}
+diff --git a/my-app/src/lib/notifications/service.mjs b/my-app/src/lib/notifications/service.mjs
+new file mode 100644
+index 0000000..c14b4da
+--- /dev/null
++++ b/my-app/src/lib/notifications/service.mjs
+@@ -0,0 +1,458 @@
++import { FieldValue, Timestamp } from 'firebase-admin/firestore';
++import {
++  hash,
++  validToken,
++  isSuperAdmin,
++  isMember,
++  incomingMessages,
++  messageKey,
++  channelId,
++  deliveryStatus,
++} from './core.mjs';
++
++export class NotificationError extends Error {
++  constructor(code, message) {
++    super(message);
++    this.code = code;
++  }
++}
++
++// No credentials, listeners, timers or scheduled Firebase Functions at import time.
++export function createNotificationService(
++  db,
++  { fetchImpl = fetch, accessToken = '' } = {},
++) {
++  const devices = db.collection('notificationDevices');
++  const jobs = db.collection('notificationJobs');
++  const receipts = db.collection('notificationReceipts');
++  function requireUser(request) {
++    if (!request.auth || request.auth.token.email_verified !== true)
++      throw new NotificationError(
++        'unauthenticated',
++        'Sign in with a verified account.',
++      );
++    return request.auth;
++  }
++  function requireAdmin(request) {
++    const auth = requireUser(request);
++    if (!isSuperAdmin(auth.token))
++      throw new NotificationError(
++        'permission-denied',
++        'Only a notification administrator can send announcements.',
++      );
++    return auth;
++  }
++  async function hasAccess(uid, businessId) {
++    const [business, member] = await Promise.all([
++      db.doc(`businesses/${businessId}`).get(),
++      db.doc(`businesses/${businessId}/users/${uid}`).get(),
++    ]);
++    return business.exists && isMember(business.data(), member.data(), uid);
++  }
++
++  async function registerNotificationDevice(request) {
++    const auth = requireUser(request);
++    const { token, businessIds, enabled, sound, vibration, platform } =
++      request.data || {};
++    if (
++      !validToken(token) ||
++      !Array.isArray(businessIds) ||
++      businessIds.length > 100 ||
++      !['ios', 'android'].includes(platform)
++    ) {
++      throw new NotificationError(
++        'invalid-argument',
++        'Invalid device registration.',
++      );
++    }
++    const allowed = [];
++    for (const id of new Set(businessIds)) {
++      if (typeof id !== 'string' || !id || id.includes('/'))
++        throw new NotificationError('invalid-argument', 'Invalid business.');
++      if (await hasAccess(auth.uid, id)) allowed.push(id);
++    }
++    // One record per physical token: multiple phones never overwrite each other.
++    // Reassignment on login prevents the previous account receiving private messages.
++    await devices.doc(hash(token)).set({
++      token,
++      userId: auth.uid,
++      businessIds: allowed,
++      enabled: enabled !== false,
++      sound: sound !== false,
++      vibration: vibration !== false,
++      platform,
++      updatedAt: FieldValue.serverTimestamp(),
++    });
++    return { registered: true, businesses: allowed.length };
++  }
++
++  async function unregisterNotificationDevice(request) {
++    const auth = requireUser(request);
++    if (!validToken(request.data?.token))
++      throw new NotificationError('invalid-argument', 'Invalid token.');
++    const ref = devices.doc(hash(request.data.token));
++    await db.runTransaction(async (tx) => {
++      const snap = await tx.get(ref);
++      if (snap.data()?.userId === auth.uid) tx.delete(ref);
++    });
++    return { removed: true };
++  }
++
++  async function notificationCenter(request) {
++    requireAdmin(request);
++    const [businesses, registered, history] = await Promise.all([
++      db.collection('businesses').get(),
++      devices.where('enabled', '==', true).get(),
++      db
++        .collection('notificationAnnouncements')
++        .orderBy('createdAt', 'desc')
++        .limit(50)
++        .get(),
++    ]);
++    return {
++      businesses: businesses.docs.map((d) => ({
++        id: d.id,
++        name: d.data().businessName || d.data().name || d.id,
++        devices: registered.docs.filter((device) =>
++          device.data().businessIds?.includes(d.id),
++        ).length,
++      })),
++      devices: registered.size,
++      history: (
++        await Promise.all(history.docs.map((d) => jobs.doc(d.id).get()))
++      )
++        .filter((d) => d.exists)
++        .map((d) => ({
++          id: d.id,
++          ...d.data(),
++          createdAt: d.data().createdAt?.toMillis() || 0,
++        })),
++    };
++  }
++
++  async function queueAnnouncement(request) {
++    const auth = requireAdmin(request);
++    const { title, body, targetBusinessId, requestId, testToken } =
++      request.data || {};
++    if (
++      typeof title !== 'string' ||
++      !title.trim() ||
++      title.length > 80 ||
++      typeof body !== 'string' ||
++      !body.trim() ||
++      body.length > 300 ||
++      typeof targetBusinessId !== 'string' ||
++      !targetBusinessId ||
++      targetBusinessId.includes('/') ||
++      typeof requestId !== 'string' ||
++      !/^[\w-]{12,100}$/.test(requestId)
++    ) {
++      throw new NotificationError(
++        'invalid-argument',
++        'Choose an audience and enter a title (80 characters) and message (300 characters).',
++      );
++    }
++    if (testToken) {
++      if (!validToken(testToken))
++        throw new NotificationError(
++          'invalid-argument',
++          'Register this device first.',
++        );
++      const device = await devices.doc(hash(testToken)).get();
++      if (device.data()?.userId !== auth.uid || !device.data()?.enabled)
++        throw new NotificationError(
++          'permission-denied',
++          'Enable notifications on this device first.',
++        );
++    } else if (
++      targetBusinessId !== 'all' &&
++      !(await db.doc(`businesses/${targetBusinessId}`).get()).exists
++    ) {
++      throw new NotificationError(
++        'not-found',
++        'This business no longer exists.',
++      );
++    }
++    const id = hash(`${auth.uid}:${requestId}`);
++    await db.runTransaction(async (tx) => {
++      const ref = jobs.doc(id);
++      if ((await tx.get(ref)).exists) return;
++      tx.create(db.collection('notificationAnnouncements').doc(id), {
++        createdAt: FieldValue.serverTimestamp(),
++      });
++      tx.create(ref, {
++        kind: 'announcement',
++        title: title.trim(),
++        body: body.trim(),
++        targetBusinessId,
++        ...(testToken ? { testToken } : {}),
++        createdBy: auth.uid,
++        createdAt: FieldValue.serverTimestamp(),
++        status: 'queued',
++        data: { type: 'announcement' },
++      });
++    });
++    return { id, status: 'queued' };
++  }
++
++  async function expo(path, payload) {
++    const response = await fetchImpl(
++      `https://exp.host/--/api/v2/push/${path}`,
++      {
++        method: 'POST',
++        headers: {
++          'Content-Type': 'application/json',
++          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
++        },
++        body: JSON.stringify(payload),
++        signal: AbortSignal.timeout(20000),
++      },
++    );
++    if (!response.ok)
++      throw new Error(`Push service returned ${response.status}`);
++    const json = await response.json();
++    if (!json.data)
++      throw new Error(
++        json.errors?.[0]?.message || 'Invalid push service response',
++      );
++    return json.data;
++  }
++
++  async function deliver(ref, deadline = Date.now() + 120000) {
++    const job = await db.runTransaction(async (tx) => {
++      const snap = await tx.get(ref);
++      const data = snap.data();
++      if (
++        !data ||
++        !['queued', 'retry', 'sending'].includes(data.status) ||
++        data.leaseUntil?.toMillis() > Date.now()
++      )
++        return null;
++      tx.update(ref, {
++        status: 'sending',
++        leaseUntil: Timestamp.fromMillis(Date.now() + 180000),
++        attempts: FieldValue.increment(1),
++      });
++      return data;
++    });
++    if (!job) return;
++    try {
++      // Single-field queries keep setup independent of composite Firestore indexes.
++      let target = devices.where('enabled', '==', true);
++      if (job.testToken) target = devices.where('token', '==', job.testToken);
++      else if (job.targetBusinessId !== 'all')
++        target = devices.where(
++          'businessIds',
++          'array-contains',
++          job.targetBusinessId,
++        );
++      const snapshot = await target.get();
++      let accepted = job.sentCount || 0;
++      let failed = job.failedCount || 0;
++      const errors = new Set(job.errors || []);
++      for (const device of snapshot.docs) {
++        if (Date.now() + 22000 > deadline) {
++          await ref.update({ status: 'queued', leaseUntil: null });
++          return;
++        }
++        const attemptRef = ref.collection('attempts').doc(device.id);
++        if ((await attemptRef.get()).exists) continue;
++        const current = await device.ref.get();
++        const d = current.data();
++        if (!d?.enabled || !validToken(d.token)) continue;
++        if (job.testToken && d.userId !== job.createdBy) continue;
++        if (
++          job.targetBusinessId !== 'all' &&
++          !job.testToken &&
++          !(await hasAccess(d.userId, job.targetBusinessId))
++        )
++          continue;
++        // Persist the result before moving to the next device. Retries skip accepted tickets.
++        const tickets = await expo('send', [
++          {
++            to: d.token,
++            title: job.title,
++            body: job.body,
++            data: { ...job.data, notificationId: ref.id },
++            sound: d.sound ? 'default' : null,
++            channelId: channelId(d.sound, d.vibration),
++            priority: 'high',
++            ttl: 86400,
++          },
++        ]);
++        const ticket = tickets[0];
++        if (!ticket || !['ok', 'error'].includes(ticket.status))
++          throw new Error('Missing push ticket');
++        const batch = db.batch();
++        if (ticket.status === 'ok') {
++          accepted++;
++          if (ticket.id)
++            batch.set(receipts.doc(ticket.id), {
++              jobId: ref.id,
++              deviceId: device.id,
++              createdAt: FieldValue.serverTimestamp(),
++              status: 'pending',
++            });
++        } else {
++          const reason =
++            ticket.details?.error || ticket.message || 'Push rejected';
++          if (reason === 'MessageRateExceeded') throw new Error(reason);
++          failed++;
++          errors.add(reason);
++          if (reason === 'DeviceNotRegistered')
++            batch.update(device.ref, { enabled: false });
++        }
++        batch.set(attemptRef, {
++          status: ticket.status,
++          ticketId: ticket.id || null,
++        });
++        batch.update(ref, {
++          sentCount: accepted,
++          failedCount: failed,
++          errors: [...errors].slice(0, 5),
++          leaseUntil: Timestamp.fromMillis(Date.now() + 180000),
++        });
++        await batch.commit();
++      }
++      await ref.update({
++        status: deliveryStatus(accepted + failed, accepted, failed),
++        recipients: accepted + failed,
++        sentCount: accepted,
++        failedCount: failed,
++        leaseUntil: null,
++        completedAt: FieldValue.serverTimestamp(),
++      });
++    } catch (error) {
++      const exhausted = (job.attempts || 0) >= 4;
++      await ref.update({
++        status: exhausted ? 'failed' : 'retry',
++        leaseUntil: Timestamp.fromMillis(Date.now() + 60000),
++        errors: [String(error.message || error)],
++        ...(exhausted ? { completedAt: FieldValue.serverTimestamp() } : {}),
++      });
++    }
++  }
++
++  async function saveChat(ref, data, newMessages, append = false) {
++    // Called only after widget authorization/rate limiting. Ignore client-supplied
++    // history: callers pass only the visitor message accepted by this request.
++    const candidates = incomingMessages(null, { messages: newMessages });
++    return db.runTransaction(async (tx) => {
++      const chat = await tx.get(ref);
++      const entries = candidates.map((message) => ({
++        message,
++        ref: jobs.doc(
++          hash(`${data.businessId}:${ref.id}:${messageKey(message)}`),
++        ),
++      }));
++      const existing = await Promise.all(
++        entries.map((entry) => tx.get(entry.ref)),
++      );
++      const previousMessages = chat.data()?.messages || [];
++      const previous = new Set(previousMessages.map(messageKey));
++      const fresh = candidates.filter(
++        (message) => !previous.has(messageKey(message)),
++      );
++      const merged = [...previousMessages, ...fresh];
++      tx.set(
++        ref,
++        append
++          ? { ...data, messages: merged, messageCount: merged.length }
++          : data,
++        { merge: true },
++      );
++      entries.forEach((entry, index) => {
++        if (existing[index].exists || previous.has(messageKey(entry.message)))
++          return;
++        tx.create(entry.ref, {
++          kind: 'chat',
++          title: data.visitorName || data.pageTitle || 'New customer message',
++          body: entry.message.text.slice(0, 300),
++          targetBusinessId: data.businessId,
++          data: {
++            type: 'chat',
++            businessId: data.businessId,
++            chatId: ref.id,
++            widgetKey: data.widgetKey || '',
++          },
++          status: 'queued',
++          createdAt: FieldValue.serverTimestamp(),
++        });
++      });
++      return entries.map((entry) => entry.ref.id);
++    });
++  }
++
++  async function checkReceipts() {
++    const pending = await receipts
++      .where('status', '==', 'pending')
++      .limit(100)
++      .get();
++    const ready = pending.docs.filter(
++      (d) => d.data().createdAt?.toMillis() < Date.now() - 60000,
++    );
++    if (!ready.length) return;
++    const results = await expo('getReceipts', { ids: ready.map((d) => d.id) });
++    for (const receipt of ready) {
++      const result = results[receipt.id];
++      if (
++        !result &&
++        receipt.data().createdAt.toMillis() > Date.now() - 86400000
++      )
++        continue;
++      // Multiple requests can run maintenance concurrently. Count each receipt once.
++      await db.runTransaction(async (tx) => {
++        const current = await tx.get(receipt.ref);
++        if (current.data()?.status !== 'pending') return;
++        const deviceRef = devices.doc(receipt.data().deviceId);
++        const device = await tx.get(deviceRef);
++        tx.update(receipt.ref, {
++          status: result?.status || 'expired',
++          checkedAt: FieldValue.serverTimestamp(),
++        });
++        const job = jobs.doc(receipt.data().jobId);
++        if (result?.status === 'ok')
++          tx.update(job, { confirmedCount: FieldValue.increment(1) });
++        else {
++          tx.update(job, {
++            receiptFailedCount: FieldValue.increment(1),
++            errors: FieldValue.arrayUnion(
++              result?.details?.error || 'Receipt unavailable',
++            ),
++          });
++          if (result?.details?.error === 'DeviceNotRegistered' && device.exists)
++            tx.update(deviceRef, { enabled: false });
++        }
++      });
++    }
++  }
++
++  async function drain(preferredId) {
++    const deadline = Date.now() + 120000;
++    for (const id of Array.isArray(preferredId)
++      ? preferredId
++      : preferredId
++        ? [preferredId]
++        : []) {
++      if (Date.now() + 22000 > deadline) break;
++      await deliver(jobs.doc(id), deadline);
++    }
++    const pending = await jobs
++      .where('status', 'in', ['queued', 'retry', 'sending'])
++      .limit(30)
++      .get();
++    for (const job of pending.docs) {
++      if (Date.now() + 22000 > deadline) break;
++      await deliver(job.ref, deadline);
++    }
++    if (Date.now() + 22000 < deadline) await checkReceipts();
++  }
++  return {
++    registerNotificationDevice,
++    unregisterNotificationDevice,
++    notificationCenter,
++    queueAnnouncement,
++    saveChat,
++    drain,
++  };
++}
+diff --git a/my-app/tests/notification-memory-db.mjs b/my-app/tests/notification-memory-db.mjs
+new file mode 100644
+index 0000000..7bb054f
+--- /dev/null
++++ b/my-app/tests/notification-memory-db.mjs
+@@ -0,0 +1,129 @@
++// Deliberately isolated fake for behavioral tests. No Firebase credentials/network.
++import assert from 'node:assert/strict';
++import { Timestamp } from 'firebase-admin/firestore';
++export function memoryDb() {
++  const store = new Map();
++  let lock = Promise.resolve();
++  function apply(path, values, merge = true) {
++    const data = merge ? { ...store.get(path) } : {};
++    for (const [key, value] of Object.entries(values)) {
++      switch (value?.constructor?.name) {
++        case 'ServerTimestampTransform':
++          data[key] = Timestamp.now();
++          break;
++        case 'NumericIncrementTransform':
++          data[key] = (data[key] || 0) + value.operand;
++          break;
++        case 'ArrayUnionTransform':
++          data[key] = [...new Set([...(data[key] || []), ...value.elements])];
++          break;
++        case 'DeleteTransform':
++          delete data[key];
++          break;
++        default:
++          data[key] = value;
++      }
++    }
++    store.set(path, data);
++  }
++  const snapshot = (ref) => ({
++    id: ref.id,
++    ref,
++    exists: store.has(ref.path),
++    data: () => store.get(ref.path),
++  });
++  function doc(path) {
++    const ref = {
++      path,
++      id: path.split('/').at(-1),
++      collection: (key) => collection(`${path}/${key}`),
++      get: async () => snapshot(ref),
++      set: async (data, opts) => apply(path, data, !!opts?.merge),
++      update: async (data) => {
++        assert.ok(store.has(path));
++        apply(path, data);
++      },
++    };
++    return ref;
++  }
++  function collection(path, filters = [], max = Infinity, sort = undefined) {
++    return {
++      doc: (id) => doc(`${path}/${id}`),
++      where: (key, op, value) =>
++        collection(path, [...filters, [key, op, value]], max, sort),
++      limit: (limit) => collection(path, filters, limit, sort),
++      orderBy: (key, direction) =>
++        collection(path, filters, max, [key, direction]),
++      get: async () => {
++        let entries = [...store].filter(
++          ([p, data]) =>
++            p.startsWith(path + '/') &&
++            !p.slice(path.length + 1).includes('/') &&
++            filters.every(([key, op, value]) =>
++              op === '=='
++                ? data[key] === value
++                : op === 'in'
++                  ? value.includes(data[key])
++                  : op === 'array-contains'
++                    ? data[key]?.includes(value)
++                    : false,
++            ),
++        );
++        if (sort)
++          entries.sort(
++            (a, b) =>
++              (Number(a[1][sort[0]]?.toMillis?.() || 0) -
++                Number(b[1][sort[0]]?.toMillis?.() || 0)) *
++              (sort[1] === 'desc' ? -1 : 1),
++          );
++        const docs = entries.slice(0, max).map(([p]) => snapshot(doc(p)));
++        return { docs, size: docs.length, empty: !docs.length };
++      },
++    };
++  }
++  function batch() {
++    const writes = [];
++    return {
++      get: async (ref) => {
++        assert.equal(
++          writes.length,
++          0,
++          'Firestore requires reads before writes',
++        );
++        return snapshot(ref);
++      },
++      set: (ref, data, opts) =>
++        writes.push(() => apply(ref.path, data, !!opts?.merge)),
++      create: (ref, data) =>
++        writes.push(() => {
++          assert.ok(!store.has(ref.path), 'create must not overwrite');
++          apply(ref.path, data, false);
++        }),
++      update: (ref, data) =>
++        writes.push(() => {
++          assert.ok(store.has(ref.path), 'update needs document');
++          apply(ref.path, data);
++        }),
++      delete: (ref) => writes.push(() => store.delete(ref.path)),
++      commit: async () => {
++        for (const write of writes) write();
++      },
++    };
++  }
++  return {
++    store,
++    doc,
++    collection,
++    batch,
++    runTransaction: (fn) => {
++      const task = lock.then(async () => {
++        const tx = batch();
++        const result = await fn(tx);
++        await tx.commit();
++        return result;
++      });
++      lock = task.catch(() => {});
++      return task;
++    },
++  };
++}
+diff --git a/my-app/tests/notifications.test.mjs b/my-app/tests/notifications.test.mjs
+new file mode 100644
+index 0000000..55596b3
+--- /dev/null
++++ b/my-app/tests/notifications.test.mjs
+@@ -0,0 +1,263 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { Timestamp } from 'firebase-admin/firestore';
++import { createNotificationService } from '../src/lib/notifications/service.mjs';
++import { createNotificationHandler } from '../src/lib/notifications/http.mjs';
++import { hash } from '../src/lib/notifications/core.mjs';
++import { memoryDb } from './notification-memory-db.mjs';
++
++const staff = {
++  uid: 'staff',
++  token: { email_verified: true, email: 'staff@example.com' },
++};
++const admin = {
++  uid: 'admin',
++  token: { email_verified: true, superAdmin: true },
++};
++const deviceToken = 'ExpoPushToken[test-device]';
++const req = (auth, data) => ({ auth, data });
++async function setup(
++  fetchImpl = async () =>
++    Response.json({ data: [{ status: 'ok', id: 'receipt1' }] }),
++) {
++  const db = memoryDb();
++  await db.doc('businesses/b1').set({ ownerId: 'owner', name: 'Test' });
++  await db
++    .doc('businesses/b1/users/staff')
++    .set({ role: 'support', status: 'active' });
++  const service = createNotificationService(db, { fetchImpl });
++  await service.registerNotificationDevice(
++    req(staff, {
++      token: deviceToken,
++      businessIds: ['b1', 'outside'],
++      platform: 'ios',
++    }),
++  );
++  return { db, service };
++}
++const message = {
++  id: 'm1',
++  role: 'user',
++  text: 'Hello',
++  createdAt: '2026-01-01',
++};
++async function save(db, service, messages = [message]) {
++  return service.saveChat(
++    db.doc('businesses/b1/supportChats/c1'),
++    {
++      businessId: 'b1',
++      widgetKey: 'widget1',
++      messages,
++      visitorName: 'Visitor',
++    },
++    messages,
++    true,
++  );
++}
++
++test('verified device is restricted to active businesses; another user cannot unregister it', async () => {
++  const { db, service } = await setup();
++  const key = `notificationDevices/${hash(deviceToken)}`;
++  assert.deepEqual(db.store.get(key).businessIds, ['b1']);
++  await service.unregisterNotificationDevice(
++    req(admin, { token: deviceToken }),
++  );
++  assert.ok(db.store.has(key));
++  await service.unregisterNotificationDevice(
++    req(staff, { token: deviceToken }),
++  );
++  assert.equal(db.store.has(key), false);
++  await assert.rejects(
++    () => service.registerNotificationDevice(req({ ...staff, token: {} }, {})),
++    { code: 'unauthenticated' },
++  );
++});
++test('visitor message and job persist together; replay, staff and AI replies do not duplicate alerts', async () => {
++  const sent = [];
++  const { db, service } = await setup(async (_, options) => {
++    sent.push(JSON.parse(options.body));
++    return Response.json({ data: [{ status: 'ok', id: 'r' }] });
++  });
++  await save(db, service);
++  await save(db, service, [
++    message,
++    { id: 'a1', role: 'assistant', text: 'Answer' },
++  ]);
++  await Promise.all([service.drain(), service.drain()]);
++  assert.equal(sent.length, 1);
++  assert.deepEqual(sent[0][0].data, {
++    type: 'chat',
++    businessId: 'b1',
++    chatId: 'c1',
++    widgetKey: 'widget1',
++    notificationId: hash('b1:c1:m1'),
++  });
++  assert.equal(db.store.get('businesses/b1/supportChats/c1').messageCount, 1);
++  assert.equal(
++    db.store.get(`notificationJobs/${hash('b1:c1:m1')}`).status,
++    'accepted',
++  );
++});
++test('revoked membership and disabled devices receive no chat pushes', async () => {
++  let sends = 0;
++  const { db, service } = await setup(async () => {
++    sends++;
++    return Response.json({ data: [] });
++  });
++  await save(db, service);
++  await db.doc('businesses/b1/users/staff').update({ status: 'disabled' });
++  await service.drain();
++  assert.equal(sends, 0);
++  assert.equal(
++    db.store.get(`notificationJobs/${hash('b1:c1:m1')}`).status,
++    'no-recipients',
++  );
++});
++test('network failure stays retryable; accepted retry is not sent again', async () => {
++  let sends = 0;
++  const { db, service } = await setup(async () => {
++    if (++sends === 1) throw new Error('offline');
++    return Response.json({ data: [{ status: 'ok', id: 'r' }] });
++  });
++  await save(db, service);
++  await service.drain();
++  const job = db.doc(`notificationJobs/${hash('b1:c1:m1')}`);
++  assert.equal((await job.get()).data().status, 'retry');
++  await job.update({ leaseUntil: null });
++  await service.drain();
++  await service.drain();
++  assert.equal(sends, 2);
++  assert.equal((await job.get()).data().status, 'accepted');
++});
++test('unregistered tokens are disabled and send is recorded as failed', async () => {
++  const { db, service } = await setup(async () =>
++    Response.json({
++      data: [{ status: 'error', details: { error: 'DeviceNotRegistered' } }],
++    }),
++  );
++  await save(db, service);
++  await service.drain();
++  assert.equal(
++    db.store.get(`notificationDevices/${hash(deviceToken)}`).enabled,
++    false,
++  );
++  assert.equal(
++    db.store.get(`notificationJobs/${hash('b1:c1:m1')}`).status,
++    'failed',
++  );
++});
++test('announcements require administrator, test token ownership and stable request IDs', async () => {
++  const { db, service } = await setup();
++  const data = {
++    title: 'Hello',
++    body: 'World',
++    targetBusinessId: 'all',
++    requestId: 'request-123456',
++  };
++  await assert.rejects(() => service.queueAnnouncement(req(staff, data)), {
++    code: 'permission-denied',
++  });
++  await assert.rejects(
++    () =>
++      service.queueAnnouncement(
++        req(admin, { ...data, testToken: deviceToken }),
++      ),
++    { code: 'permission-denied' },
++  );
++  const first = await service.queueAnnouncement(req(admin, data));
++  const second = await service.queueAnnouncement(req(admin, data));
++  assert.equal(first.id, second.id);
++  assert.equal((await db.collection('notificationJobs').get()).size, 1);
++});
++test('concurrent receipt checks count provider confirmation once', async () => {
++  const { db, service } = await setup(async (url) =>
++    Response.json({
++      data: url.endsWith('getReceipts')
++        ? { receipt1: { status: 'ok' } }
++        : [{ status: 'ok', id: 'receipt1' }],
++    }),
++  );
++  await save(db, service);
++  await service.drain();
++  await db
++    .doc('notificationReceipts/receipt1')
++    .update({ createdAt: Timestamp.fromMillis(Date.now() - 120000) });
++  await Promise.all([service.drain(), service.drain()]);
++  assert.equal(
++    db.store.get(`notificationJobs/${hash('b1:c1:m1')}`).confirmedCount,
++    1,
++  );
++});
++test('HTTP blocks unsigned, unverified, malformed, disallowed-origin and disabled requests before service use', async () => {
++  let calls = 0;
++  let enabled = true;
++  const handle = createNotificationHandler({
++    enabled: () => enabled,
++    origins: ['https://chat.vintrastudio.com'],
++    verifyToken: async (token) => ({
++      uid: 'staff',
++      email_verified: token === 'verified',
++    }),
++    service: () => {
++      calls++;
++      throw new Error('must not run');
++    },
++    schedule: () => {},
++  });
++  const request = (token, input, origin) =>
++    new Request('https://test/api/notifications', {
++      method: 'POST',
++      headers: {
++        ...(token ? { Authorization: `Bearer ${token}` } : {}),
++        ...(origin ? { Origin: origin } : {}),
++      },
++      body: JSON.stringify(input),
++    });
++  const data = { action: 'registerNotificationDevice', data: {} };
++  assert.equal((await handle(request(null, data))).status, 401);
++  assert.equal((await handle(request('unverified', data))).status, 403);
++  assert.equal(
++    (await handle(request('verified', data, 'https://evil.example'))).status,
++    403,
++  );
++  assert.equal(
++    (await handle(request('verified', { action: 'drain', data: {} }))).status,
++    400,
++  );
++  enabled = false;
++  assert.equal((await handle(request('verified', data))).status, 503);
++  assert.equal(calls, 0);
++});
++test('HTTP valid registration uses authenticated identity and schedules delivery after response', async () => {
++  let scheduled;
++  let call;
++  const handle = createNotificationHandler({
++    enabled: () => true,
++    origins: [],
++    verifyToken: async () => ({ uid: 'server-user', email_verified: true }),
++    service: () => ({
++      registerNotificationDevice: async (input) => {
++        call = input;
++        return { registered: true };
++      },
++      drain: async () => {},
++    }),
++    schedule: (fn) => {
++      scheduled = fn;
++    },
++  });
++  const response = await handle(
++    new Request('https://test/api/notifications', {
++      method: 'POST',
++      headers: { Authorization: 'Bearer signed' },
++      body: JSON.stringify({
++        action: 'registerNotificationDevice',
++        data: { uid: 'forged' },
++      }),
++    }),
++  );
++  assert.equal(response.status, 200);
++  assert.equal(call.auth.uid, 'server-user');
++  assert.deepEqual(await response.json(), { data: { registered: true } });
++  assert.equal(typeof scheduled, 'function');
++});

@@ -1,4 +1,37 @@
-# Notification delivery
+# Notification delivery — Vercel migration
+
+The mobile app now calls `https://chat.vintrastudio.com/api/notifications` using a Firebase
+ID token. It no longer calls Firebase callable functions. Firebase Auth and Firestore remain
+in use; this route does not require upgrading Firebase to Blaze.
+
+The matching website implementation is in the separate local checkout
+`../../vintrachat-notifications`, branch `codex/vercel-notifications`, repository
+`WhisperStudio/vintrachat_xoxo`, app root `my-app`. See its `my-app/NOTIFICATIONS.md` for
+activation requirements, tests, retry behavior and rollout steps.
+
+**Not deployed or activated.** Live Firestore rules still grant unrestricted access as of
+23 October 2026. Protect server-only notification data and migrate ownership/membership and
+invitation access in both clients before activation. The server defaults to disabled until
+`VINTRA_NOTIFICATIONS_ENABLED=true` is configured. No billing or live configuration changed.
+
+The server uses existing Vercel Functions and Expo Push; no Firebase Functions or paid scheduler
+is required. Usage counts against existing Vercel/Firestore quotas. Retries and receipt checks
+run on subsequent requests, not a periodic timer, so quiet periods can delay recovery.
+
+The old TestFlight build still calls Firebase Functions. After the server and access rules are
+ready, build and distribute this updated app, then connect notifications on each phone. Merely
+pushing this mobile repository does not deploy the website backend.
+
+Optional build-time setting: `EXPO_PUBLIC_NOTIFICATION_API_URL`, a trusted HTTPS endpoint.
+No backend credentials belong in the app. Test app HTTP behavior with Node 24:
+`node --test tests/notification-api.test.mjs`.
+
+## Legacy Firebase Functions implementation
+
+`functions/` and `firebase.json` are retained as the previous, undeployed implementation.
+Do not deploy them alongside the Vercel implementation. The notes below describe that previous
+implementation and its earlier validation, not the current app transport.
+
 
 ## What is implemented
 
