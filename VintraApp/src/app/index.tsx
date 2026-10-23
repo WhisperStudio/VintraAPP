@@ -325,6 +325,8 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [adminReady, setAdminReady] = useState(false);
   const [accessError, setAccessError] = useState('');
+  const [accessUnavailable, setAccessUnavailable] = useState(false);
+  const [accessRetry, setAccessRetry] = useState(0);
   const [chats, setChats] = useState<SupportChat[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialSelectedChatId ?? null);
@@ -579,6 +581,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     let mounted = true;
 
     setAdminReady(false);
+    setAccessUnavailable(false);
     setAccessError('');
     setAdminProfile(null);
 
@@ -599,6 +602,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
       })
       .catch((error: unknown) => {
         if (!mounted) return;
+        setAccessUnavailable(true);
         setAccessError(error instanceof Error ? error.message : 'Could not check account access.');
         setAdminReady(true);
       });
@@ -606,7 +610,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     return () => {
       mounted = false;
     };
-  }, [user]);
+  }, [user, accessRetry]);
 
   useEffect(() => {
     if (!adminProfile) return;
@@ -769,8 +773,11 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
         <View style={styles.noAccessIcon}>
           <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={24} tintColor="#ffffff" />
         </View>
-        <ThemedText style={styles.noAccessTitle}>{adminT('admin_access_denied')}</ThemedText>
+        <ThemedText style={styles.noAccessTitle}>{accessUnavailable ? 'Connection unavailable' : adminT('admin_access_denied')}</ThemedText>
         <ThemedText style={styles.noAccessText}>{accessError || adminT('admin_no_permission')}</ThemedText>
+        {accessUnavailable && <Pressable accessibilityRole="button" onPress={() => setAccessRetry(value => value + 1)} style={styles.noAccessButton}>
+          <ThemedText style={styles.noAccessButtonText}>Try again</ThemedText>
+        </Pressable>}
         <Pressable onPress={handleSignOut} style={({ pressed }) => [styles.noAccessButton, pressed && styles.pressed]}>
           <ThemedText style={styles.noAccessButtonText}>{adminT('admin_sign_out')}</ThemedText>
         </Pressable>

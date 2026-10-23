@@ -1,4 +1,5 @@
-import { getIdTokenResult, type User } from 'firebase/auth';
+import { requestAccessApi } from '@/lib/access-api';
+import { type User } from 'firebase/auth';
 import {
   arrayUnion,
   collection,
@@ -11,9 +12,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
-  where,
   type FirestoreError,
   type Timestamp,
   type Unsubscribe,
@@ -95,33 +94,6 @@ export type ChatAnalytics = {
 };
 
 const ADMIN_ROLES = new Set(['admin', 'owner', 'support']);
-
-function normalizeEmail(email?: string | null) {
-  return String(email || '').trim().toLowerCase();
-}
-
-function normalizePhone(phone?: string | null) {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.length === 8) return `47${digits}`;
-  if (digits.startsWith('00')) return digits.slice(2);
-  return digits;
-}
-
-function invitationMatchesUser(invite: Record<string, unknown>, email: string, phone: string) {
-  const inviteEmail = normalizeEmail(String(invite.email || invite.normalizedEmail || ''));
-  const invitePhones = [
-    invite.phone,
-    invite.telephone,
-    invite.phoneNumber,
-    invite.normalizedPhone,
-  ].map((value) => normalizePhone(String(value || ''))).filter(Boolean);
-
-  return Boolean(
-    (email && inviteEmail === email) ||
-    (phone && invitePhones.includes(phone))
-  );
-}
 
 function randomId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -246,227 +218,30 @@ function mapChatAnalytics(data: Record<string, unknown>): ChatAnalytics {
   };
 }
 
-async function profileFromBusiness(user: User, businessId: string): Promise<AdminProfile | null> {
-  const membershipRef = doc(firebaseDb, `businesses/${businessId}/users/${user.uid}`);
-  const membership = await getDoc(membershipRef);
-
-  if (!membership.exists()) {
-    return null;
-  }
-
-  const data = membership.data();
-  const role = String(data.role || '');
-  const status = String(data.status || 'active');
-
-  if (!ADMIN_ROLES.has(role) || status !== 'active') {
-    return null;
-  }
-
-  return {
-    businessId,
-    role,
-    email: String(data.email || user.email || ''),
-    displayName: data.displayName ? String(data.displayName) : user.displayName || undefined,
-  };
-}
-
 export async function resolveAllAdminProfiles(user: User): Promise<AdminProfile[]> {
-  const results: AdminProfile[] = [];
-  const seen = new Set<string>();
-
-  function bizName(bizData: Record<string, unknown> | undefined, fallback: string): string {
-    if (!bizData) return fallback;
-    return String(bizData.name || bizData.businessName || bizData.widgetName || bizData.displayName || '') || fallback;
-  }
-
-  // Owned businesses — add as owner directly without subcollection check,
-  // because the owner may not have a membership doc in their own business.
-  async function addOwnedBusiness(businessId: string, bizData: Record<string, unknown>): Promise<void> {
-    if (seen.has(businessId)) return;
-    seen.add(businessId);
-    results.push({
-      businessId,
-      role: 'owner',
-      email: String(user.email || ''),
-      displayName: user.displayName || undefined,
-      businessName: bizName(bizData, businessId),
-    });
-  }
-
-  // Non-owned businesses — verify via subcollection membership.
-  async function tryMemberBusiness(businessId: string, bizData?: Record<string, unknown>): Promise<void> {
-    if (seen.has(businessId)) return;
-    seen.add(businessId);
-    try {
-      const memberSnap = await getDoc(doc(firebaseDb, `businesses/${businessId}/users/${user.uid}`));
-      if (!memberSnap.exists()) return;
-      const data = memberSnap.data();
-      const role = String(data.role || '');
-      const status = String(data.status || 'active');
-      if (!ADMIN_ROLES.has(role) || status !== 'active') return;
-      if (!bizData) {
-        const bizDoc = await getDoc(doc(firebaseDb, 'businesses', businessId));
-        if (bizDoc.exists()) bizData = bizDoc.data() as Record<string, unknown>;
-      }
-      results.push({
-        businessId,
-        role,
-        email: String(data.email || user.email || ''),
-        displayName: data.displayName ? String(data.displayName) : user.displayName || undefined,
-        businessName: bizName(bizData, businessId),
-      });
-    } catch {
-      // Permission denied or network error for this business — skip silently.
-    }
-  }
-
-  // 1. JWT claim (may be a non-owned business the user is a member of)
-  const token = await getIdTokenResult(user, true).catch(() => null);
-  const claimedId = String(token?.claims.businessId || token?.claims.business_id || '');
-  if (claimedId) await tryMemberBusiness(claimedId);
-
-  // 2. All businesses owned by this user (bypasses subcollection)
-  try {
-    const ownedSnap = await getDocs(query(collection(firebaseDb, 'businesses'), where('ownerId', '==', user.uid)));
-    for (const biz of ownedSnap.docs) {
-      await addOwnedBusiness(biz.id, biz.data() as Record<string, unknown>);
-    }
-  } catch { /* ignore */ }
-
-  // 3. All businesses — catch any remaining member access
-  try {
-    const allSnap = await getDocs(collection(firebaseDb, 'businesses'));
-    for (const biz of allSnap.docs) {
-      await tryMemberBusiness(biz.id, biz.data() as Record<string, unknown>);
-    }
-  } catch { /* ignore */ }
-
-  return results;
+  if (!user.emailVerified) return [];
+  const profiles = await requestAccessApi<AdminProfile[]>(user, 'listBusinesses');
+  return profiles.filter(profile => ADMIN_ROLES.has(profile.role));
 }
 
-export async function ensureVerifiedPendingUser(user: User, phone?: string) {
-  const email = normalizeEmail(user.email);
-  const savedPhone = phone || user.phoneNumber || '';
-  const savedNormalizedPhone = normalizePhone(savedPhone);
-  const phonePayload = savedPhone || savedNormalizedPhone
-    ? { phone: savedPhone, normalizedPhone: savedNormalizedPhone }
-    : {};
-
-  if (user.emailVerified) {
-    const pendingUserRef = doc(firebaseDb, 'pending_users', user.uid);
-    await setDoc(pendingUserRef, {
-      email,
-      normalizedEmail: email,
-      displayName: user.displayName || '',
-      ...phonePayload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }, { merge: true }).catch(() => {});
-  }
-
-  await setDoc(doc(firebaseDb, 'pending_auth', user.uid), {
-    email,
-    normalizedEmail: email,
-    displayName: user.displayName || '',
-    ...phonePayload,
-    status: user.emailVerified ? 'email-verified' : 'pending-email',
-    updatedAt: serverTimestamp(),
-  }, { merge: true }).catch(() => {});
+export async function ensureVerifiedPendingUser(user: User, _phone?: string) {
+  // Identity comes from Firebase Auth; never write verification or membership from the client.
+  if (user.emailVerified) await user.getIdToken(true);
 }
 
-export async function acceptPendingInvitationsForUser(user: User, phone?: string): Promise<number> {
-  const email = normalizeEmail(user.email);
+export async function acceptPendingInvitationsForUser(user: User, _phone?: string): Promise<number> {
+  if (!user.emailVerified) return 0;
+  const invites = await requestAccessApi<{ id: string; businessId: string }[]>(user, 'listInvitations');
   let accepted = 0;
-
-  const pendingUserSnap = await getDoc(doc(firebaseDb, 'pending_users', user.uid)).catch(() => null);
-  const pendingAuthSnap = await getDoc(doc(firebaseDb, 'pending_auth', user.uid)).catch(() => null);
-  const pendingPhone = String(pendingUserSnap?.data()?.phone || pendingAuthSnap?.data()?.phone || '');
-  const normalizedPhone = normalizePhone(phone || user.phoneNumber || pendingPhone);
-
-  if (!email && !normalizedPhone) {
-    return 0;
+  for (const invite of invites) {
+    await requestAccessApi(user, 'acceptInvitation', { invitationId: invite.id, businessId: invite.businessId });
+    accepted++;
   }
-
-  const isVerified = Boolean(user.emailVerified || pendingUserSnap?.exists() || pendingAuthSnap?.data()?.status === 'email-verified');
-
-  if (!isVerified) {
-    return 0;
-  }
-
-  await ensureVerifiedPendingUser(user, phone || pendingPhone);
-
-  const businessesSnap = await getDocs(collection(firebaseDb, 'businesses'));
-  for (const businessDoc of businessesSnap.docs) {
-    const invitesSnap = await getDocs(
-      query(collection(firebaseDb, `businesses/${businessDoc.id}/invitations`), where('status', '==', 'pending')),
-    ).catch(() => null);
-
-    if (!invitesSnap) continue;
-
-    for (const inviteDoc of invitesSnap.docs) {
-      const invite = inviteDoc.data() as Record<string, unknown>;
-      if (!invitationMatchesUser(invite, email, normalizedPhone)) continue;
-
-      const role = String(invite.role || 'support');
-      await setDoc(doc(firebaseDb, `businesses/${businessDoc.id}/users/${user.uid}`), {
-        email,
-        normalizedEmail: email,
-        phone: phone || user.phoneNumber || pendingPhone || '',
-        normalizedPhone,
-        displayName: user.displayName || '',
-        role: ADMIN_ROLES.has(role) ? role : 'support',
-        status: 'active',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-
-      await updateDoc(inviteDoc.ref, {
-        status: 'accepted',
-        usedAt: serverTimestamp(),
-        usedBy: user.uid,
-      }).catch(() => {});
-
-      accepted += 1;
-    }
-  }
-
-  if (accepted > 0) {
-    await deleteDoc(doc(firebaseDb, 'pending_users', user.uid)).catch(() => {});
-  }
-
   return accepted;
 }
 
 export async function resolveAdminProfile(user: User): Promise<AdminProfile | null> {
-  const token = await getIdTokenResult(user, true).catch(() => null);
-  const claimedBusinessId = token?.claims.businessId || token?.claims.business_id;
-
-  if (typeof claimedBusinessId === 'string') {
-    const profile = await profileFromBusiness(user, claimedBusinessId);
-    if (profile) {
-      return profile;
-    }
-  }
-
-  const ownedBusinesses = await getDocs(query(collection(firebaseDb, 'businesses'), where('ownerId', '==', user.uid)));
-
-  for (const business of ownedBusinesses.docs) {
-    const profile = await profileFromBusiness(user, business.id);
-    if (profile) {
-      return profile;
-    }
-  }
-
-  const businesses = await getDocs(collection(firebaseDb, 'businesses'));
-
-  for (const business of businesses.docs) {
-    const profile = await profileFromBusiness(user, business.id);
-    if (profile) {
-      return profile;
-    }
-  }
-
-  return null;
+  return (await resolveAllAdminProfiles(user))[0] || null;
 }
 
 export function listenSupportChats(

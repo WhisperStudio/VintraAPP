@@ -1,5 +1,6 @@
 type Dependencies = {
   endpoint: string;
+  serviceName?: string;
   getToken: (refresh: boolean) => Promise<string>;
   fetchImpl?: typeof fetch;
 };
@@ -7,7 +8,7 @@ type Dependencies = {
 export async function requestNotificationApi<T>(
   action: string,
   data: unknown,
-  { endpoint, getToken, fetchImpl = fetch }: Dependencies,
+  { endpoint, getToken, fetchImpl = fetch, serviceName = 'Notifications' }: Dependencies,
 ): Promise<T> {
   const url = new URL(endpoint);
   if (
@@ -17,7 +18,7 @@ export async function requestNotificationApi<T>(
     url.search ||
     url.hash
   ) {
-    throw new Error('The notification service address is invalid.');
+    throw new Error(`${serviceName}: the service address is invalid.`);
   }
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = await getToken(attempt === 1);
@@ -39,17 +40,17 @@ export async function requestNotificationApi<T>(
       if (!response.ok) {
         if (response.status === 404 || response.status === 503) {
           throw new Error(
-            'Notifications are not activated yet. Please try again later.',
+            `${serviceName} is not activated yet. Please try again later.`,
           );
         }
         throw new Error(
           result?.error?.message ||
-            'Could not connect notifications. Please try again.',
+            `Could not connect to ${serviceName.toLowerCase()}. Please try again.`,
         );
       }
       if (!result || !Object.prototype.hasOwnProperty.call(result, 'data')) {
         throw new Error(
-          'The notification service returned an invalid response.',
+          `${serviceName}: the service returned an invalid response.`,
         );
       }
       return result.data as T;
@@ -59,7 +60,7 @@ export async function requestNotificationApi<T>(
         (error instanceof Error && error.name === 'AbortError')
       ) {
         throw new Error(
-          'Could not reach notifications. Check your connection and try again.',
+          `Could not reach ${serviceName.toLowerCase()}. Check your connection and try again.`,
         );
       }
       throw error;
