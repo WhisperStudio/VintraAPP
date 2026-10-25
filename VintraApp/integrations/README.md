@@ -36,12 +36,20 @@ base `791257323af5afb15a68134a6bc34cf038cbe90d`; apply it only to a clean checko
 that base, not on top of the original patch or newer work.
 
 The current mobile source additionally requires `/api/access` for business discovery
-and safe invitation acceptance. The API was 404 on the production domain during
-verification; publishing a preview alone will not fix mobile sign-in. Publish the
-completed website and tested Firestore rules together, keeping notifications disabled,
-then build a new TestFlight app. The old `FIRESTORE_RULES.txt` targets the wrong schema.
+and safe invitation acceptance. Website commit `96d2167` and the tested Firestore rules
+were published on 23 October. Production signed-account checks now pass. The old
+`FIRESTORE_RULES.txt` targets the wrong schema and must not be published.
+
+iOS **1.0.0 (9)** from mobile commit `dfb7f8d` was built successfully and uploaded to
+App Store Connect on 25 October:
+[build](https://expo.dev/accounts/vintrastudio/projects/VintraApp/builds/51348747-04a0-4741-b781-f86a788c77ec),
+[successful submission](https://expo.dev/accounts/vintrastudio/projects/VintraApp/submissions/584830fc-f2bd-4182-a2d6-464fd7fb966f).
+Apple processing and installation on a phone remain unverified. `eas.json` now pins
+the existing App Store Connect app ID `6776323865` for subsequent submissions.
+Notification delivery remains blocked in server code until existing ownership and
+membership data has been reviewed. No real announcement or push was sent.
 
 Locally verified: mobile TypeScript and 4 transport tests; website TypeScript, production
-build, 17 notification/auth tests, 12 emulator tests, and unsigned/origin HTTP checks.
+build, 18 notification/auth tests, 12 emulator tests, and unsigned/origin HTTP checks.
 Actual phone delivery has not been tested. No paid service or Firebase Functions
 deployment is needed.
