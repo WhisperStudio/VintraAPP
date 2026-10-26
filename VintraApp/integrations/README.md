@@ -1,5 +1,28 @@
 # Vercel notification backend
 
+## Customer chat alerts (26 October 2026)
+
+`customer-chat-notifications.patch` contains a follow-up for the website checkout
+at `/Users/martinsecker/Documents/vintrachat_xoxo`. It fixes incoming support-chat
+messages failing to save and enqueue a push when the route uses Firestore
+`arrayUnion`. Every new customer message uses the existing sound-enabled push
+payload and opens the correct chat when tapped; device sound/notification settings
+are respected and replayed messages do not create another alert.
+
+The patch is applied and published from website commit `8725dbc`. It is an incremental
+patch on top of the 26 October activation release, not a replacement for the older
+combined patches below. Production deployment
+[`dpl_DLVo5Ng2u4BoccrJfB6v1EqipMKC`](https://vercel.com/vintrastudios-projects/vintrachat-xoxo/DLVo5Ng2u4BoccrJfB6v1EqipMKC)
+is **READY** and serves `https://chat.vintrastudio.com` (26 October 2026).
+No mobile rebuild is needed. Post-deploy checks: home 200, unsigned notifications
+and access requests 401, empty support-message request 400; no error/fatal runtime
+logs were returned for this deployment in the check window. No real push was sent.
+Verified: 23 notification/auth tests, 12 Firestore emulator tests, website
+TypeScript/build, mobile TypeScript and 4 transport tests. Phone delivery has not
+been tested during this change. See `my-app/NOTIFICATIONS.md` for details.
+
+## Original integration
+
 `vercel-notifications.patch` contains the matching website changes, including tests
 and activation documentation. It targets `WhisperStudio/vintrachat_xoxo` at commit
 `791257323af5afb15a68134a6bc34cf038cbe90d`, with Next.js under `my-app`.

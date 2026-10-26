@@ -1,0 +1,204 @@
+diff --git a/my-app/NOTIFICATIONS.md b/my-app/NOTIFICATIONS.md
+index dcd1051..bf74998 100644
+--- a/my-app/NOTIFICATIONS.md
++++ b/my-app/NOTIFICATIONS.md
+@@ -1,5 +1,24 @@
+ # Vintra notifications and access migration
+ 
++## Customer chat alert fix (26 October 2026)
++
++The support-message route sends `FieldValue.arrayUnion` to the chat save helper.
++The helper previously treated this transform as an array and failed before saving
++the message or queuing its push. It now merges the accepted messages transactionally,
++preserving existing replies and using message IDs to suppress replayed requests.
++The same save path runs with queuing disabled when delivery is off.
++
++Each new customer message in a support chat gets a separate push with the customer's
++name, message preview and a link to that chat. The existing device settings control
++the default notification sound and Android channel. Staff/AI replies do not enqueue
++pushes. AI-only conversations in `aiChatLogs` retain their existing behavior.
++
++Verified locally: 23 notification/auth tests, 12 Firestore emulator tests (including
++the actual arrayUnion input), website TypeScript and production build, mobile
++TypeScript and 4 transport tests. No real phone push was sent during validation.
++The fix takes effect when the website backend is published. The existing mobile
++build already supports its push payload, so no new native build is required.
++
+ ## Activation follow-up (26 October 2026)
+ 
+ Published commit: `a2a6f21f18905e3175cd123fd3cc175bd0b33ae2`, deployment
+diff --git a/my-app/src/lib/notifications.server.ts b/my-app/src/lib/notifications.server.ts
+index 31bfa2b..d3732f5 100644
+--- a/my-app/src/lib/notifications.server.ts
++++ b/my-app/src/lib/notifications.server.ts
+@@ -41,17 +41,10 @@ export async function saveChatWithNotifications(
+   messages: { id?: string; role: string; text: string; createdAt?: string }[],
+   append = false,
+ ) {
+-  if (!notificationsEnabled()) {
+-    await getAdminDb().runTransaction(async tx => {
+-      const snap = await tx.get(ref);
+-      const previous = snap.data()?.messages || [];
+-      const known = new Set(previous.map((message: { id: string }) => message.id));
+-      const merged = [...previous, ...(data.messages || []).filter((message: { id: string }) => !known.has(message.id))];
+-      tx.set(ref, { ...data, messages: merged, messageCount: merged.length }, { merge: true });
+-    });
+-    return;
+-  }
++  const enabled = notificationsEnabled();
+   const service = notificationService();
+-  const ids = await service.saveChat(ref, data, messages, append);
+-  scheduleNotificationDelivery(() => service.drain(ids));
++  const ids = await service.saveChat(ref, data, messages, append, {
++    enqueueNotifications: enabled,
++  });
++  if (enabled) scheduleNotificationDelivery(() => service.drain(ids));
+ }
+diff --git a/my-app/src/lib/notifications/service.mjs b/my-app/src/lib/notifications/service.mjs
+index de7e199..69b3d0c 100644
+--- a/my-app/src/lib/notifications/service.mjs
++++ b/my-app/src/lib/notifications/service.mjs
+@@ -343,10 +343,17 @@ export function createNotificationService(
+     }
+   }
+ 
+-  async function saveChat(ref, data, newMessages, append = false) {
++  async function saveChat(ref, data, newMessages, append = false, { enqueueNotifications = true } = {}) {
+     // Called only after widget authorization/rate limiting. Ignore client-supplied
+     // history: callers pass only the visitor message accepted by this request.
+-    const candidates = incomingMessages(null, { messages: newMessages });
++    const candidates = enqueueNotifications
++      ? incomingMessages(null, { messages: newMessages })
++      : [];
++    // The support route passes a Firestore arrayUnion transform. Merge the
++    // accepted messages ourselves so message history and jobs commit together.
++    const incoming = Array.isArray(data.messages)
++      ? data.messages
++      : append ? newMessages : [];
+     return db.runTransaction(async (tx) => {
+       const chat = await tx.get(ref);
+       const entries = candidates.map((message) => ({
+@@ -360,11 +367,8 @@ export function createNotificationService(
+       );
+       const previousMessages = chat.data()?.messages || [];
+       const previous = new Set(previousMessages.map(messageKey));
+-      const fresh = candidates.filter(
+-        (message) => !previous.has(messageKey(message)),
+-      );
+       const seen = new Set(previousMessages.map(messageKey));
+-      const additions = (data.messages || []).filter(message => {
++      const additions = incoming.filter(message => {
+         const key = messageKey(message);
+         if (seen.has(key)) return false;
+         seen.add(key);
+diff --git a/my-app/tests/firestore.test.mjs b/my-app/tests/firestore.test.mjs
+index d2f75bb..b809002 100644
+--- a/my-app/tests/firestore.test.mjs
++++ b/my-app/tests/firestore.test.mjs
+@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
+ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+ import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+ import { initializeApp, deleteApp } from 'firebase-admin/app';
+-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
++import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+ import { createAccessService } from '../src/lib/access/service.mjs';
+ import { createNotificationService } from '../src/lib/notifications/service.mjs';
+ import { hash } from '../src/lib/notifications/core.mjs';
+@@ -140,7 +140,7 @@ test('real Firestore transaction atomically saves message and job; repeated hist
+   const notifications = createNotificationService(db, { fetchImpl: () => { throw new Error('External network forbidden'); } });
+   const ref = db.doc('businesses/b1/supportChats/chat');
+   const message = { id: 'm2', role: 'user', text: 'Help' };
+-  await notifications.saveChat(ref, { businessId: 'b1', messages: [message] }, [message], true);
++  await notifications.saveChat(ref, { businessId: 'b1', messages: FieldValue.arrayUnion(message) }, [message], true);
+   await notifications.saveChat(ref, { businessId: 'b1', messages: [message] }, [message], true);
+   await notifications.saveChat(ref, { businessId: 'b1', messages: [{ id: 's2', role: 'support', text: 'Staff' }] }, [], true);
+   assert.equal((await db.collection('notificationJobs').get()).size, 1);
+diff --git a/my-app/tests/notifications.test.mjs b/my-app/tests/notifications.test.mjs
+index d29caaf..7e59b10 100644
+--- a/my-app/tests/notifications.test.mjs
++++ b/my-app/tests/notifications.test.mjs
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { Timestamp } from 'firebase-admin/firestore';
++import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+ import { createNotificationService } from '../src/lib/notifications/service.mjs';
+ import { createNotificationHandler } from '../src/lib/notifications/http.mjs';
+ import { hash } from '../src/lib/notifications/core.mjs';
+@@ -122,6 +122,76 @@ test('revoked membership and disabled devices receive no chat pushes', async ()
+     'no-recipients',
+   );
+ });
++
++test('each customer message sends an audible chat alert; support-route transforms and replays preserve history', async () => {
++  const sent = [];
++  const { db, service } = await setup(async (_, options) => {
++    sent.push(JSON.parse(options.body)[0]);
++    return Response.json({ data: [{ status: 'ok', id: `chat-receipt-${sent.length}` }] });
++  });
++  const ref = db.doc('businesses/b1/supportChats/c1');
++  await save(db, service);
++  await service.drain();
++  const reply = { id: 'reply', role: 'support', text: 'How can I help?' };
++  await service.saveChat(ref, { businessId: 'b1', messages: [reply] }, []);
++  const next = { ...message, id: 'm2' }; // Same text, but a genuinely new message.
++  const data = {
++    businessId: 'b1', visitorName: 'Visitor', widgetKey: 'widget1',
++    messages: FieldValue.arrayUnion(next), messageCount: FieldValue.increment(1),
++  };
++  await service.saveChat(ref, data, [next], true);
++  await service.saveChat(ref, data, [next], true);
++  await service.drain();
++  await service.drain();
++  assert.deepEqual((await ref.get()).data().messages.map(m => m.id), ['m1', 'reply', 'm2']);
++  assert.equal((await ref.get()).data().messageCount, 3);
++  assert.equal(sent.length, 2);
++  assert.deepEqual(sent.map(push => push.data.notificationId), [hash('b1:c1:m1'), hash('b1:c1:m2')]);
++  for (const push of sent) {
++    assert.equal(push.sound, 'default');
++    assert.equal(push.channelId, 'messages-sound-vibrate');
++    assert.equal(push.priority, 'high');
++    assert.equal(push.data.type, 'chat');
++    assert.equal(push.data.businessId, 'b1');
++    assert.equal(push.data.chatId, 'c1');
++  }
++});
++
++test('disabled delivery still saves support messages and never alerts for them later', async () => {
++  const { db, service } = await setup(() => { throw new Error('Must not send'); });
++  const ref = db.doc('businesses/b1/supportChats/c1');
++  const data = { businessId: 'b1', messages: FieldValue.arrayUnion(message) };
++  await service.saveChat(ref, data, [message], true, { enqueueNotifications: false });
++  await service.saveChat(ref, data, [message], true, { enqueueNotifications: false });
++  assert.equal((await ref.get()).data().messageCount, 1);
++  assert.equal((await db.collection('notificationJobs').get()).size, 0);
++  await service.saveChat(ref, data, [message], true);
++  await service.drain();
++  assert.equal((await db.collection('notificationJobs').get()).size, 0);
++});
++
++test('new customers trigger separate alerts and chat delivery respects sound and vibration preferences', async () => {
++  const sent = [];
++  const { db, service } = await setup(async (_, options) => {
++    sent.push(JSON.parse(options.body)[0]);
++    return Response.json({ data: [{ status: 'ok', id: `customer-receipt-${sent.length}` }] });
++  });
++  await save(db, service);
++  await service.drain();
++  await service.registerNotificationDevice(req(staff, {
++    token: deviceToken, businessIds: ['b1'], platform: 'android', sound: false, vibration: false,
++  }));
++  await service.saveChat(db.doc('businesses/b1/supportChats/c2'), {
++    businessId: 'b1', visitorName: 'Second customer', messages: [message],
++  }, [message]);
++  await service.drain();
++  assert.equal(sent.length, 2);
++  assert.equal(sent[1].data.chatId, 'c2');
++  assert.equal(sent[1].title, 'Second customer');
++  assert.equal(sent[1].body, 'Hello');
++  assert.equal(sent[1].sound, null);
++  assert.equal(sent[1].channelId, 'messages-silent-still');
++});
+ test('network failure stays retryable; accepted retry is not sent again', async () => {
+   let sends = 0;
+   const { db, service } = await setup(async () => {
