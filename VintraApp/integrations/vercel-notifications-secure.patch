@@ -102,13 +102,64 @@ index c43ff25..1f1d25f 100644
 +// Les NOTIFICATIONS.md for publiseringsrekkefølge og aktiveringskrav.
 diff --git a/my-app/NOTIFICATIONS.md b/my-app/NOTIFICATIONS.md
 new file mode 100644
-index 0000000..8c63b77
+index 0000000..41aeaad
 --- /dev/null
 +++ b/my-app/NOTIFICATIONS.md
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,227 @@
 +# Vintra notifications and access migration
 +
-+## Current release state (23 October 2026)
++## Activation follow-up (26 October 2026)
++
++The owner requested activation with `vintrastudio@gmail.com` managing the panel and
++other users receiving announcements. The verified Vintra account already meets the
++server's administrator policy; no roles or email-verification flags were changed.
++
++This release removes the temporary migration code gate. Production delivery now requires
++`VINTRA_NOTIFICATIONS_ENABLED=true` **and** `VERCEL_ENV=production`. Preview deployments
++never send. The admin panel, device registration and unregister work while delivery is off;
++queuing announcements still returns 503 until enabled and no background delivery runs.
++
++All active business roles, including `user` and `viewer`, can receive announcements.
++Customer-message alerts remain limited to the owner, admin, manager and support roles.
++Recipients must have a verified, enabled Auth account, a valid session, active business
++access and an opted-in registered phone. Only authorized notification administrators can
++open the panel or send announcements; receiving never grants sending permission.
++
++Vercel environment access still returns 403 and the CLI cannot access the team. Therefore
++the environment switch cannot be changed or read with the current connection. Set
++`VINTRA_NOTIFICATIONS_ENABLED=true` for **Production** in the existing project's
++environment settings and redeploy to activate delivery; keep Preview false. No further
++code edit or new mobile build is needed beyond TestFlight **1.0.0 (9)** for this follow-up.
++
++Unverified/missing accounts remain individually ineligible; they do not block eligible
++users globally. Existing memberships were not silently approved or repaired. Phone
++delivery remains unverified, and no real announcement has been sent during this work.
++
++## Previous published release (25 October 2026)
++
++Published and verified:
++- Website commit `96d216787199ae34ea143c5bfea8b5fd2fe879c7` is on `main` and live at
++  `https://chat.vintrastudio.com`. Production deployment
++  `dpl_48KDvP43L8HLLfWEucJ4mTuZNBKp` is READY.
++- Tested Firestore rules were published at `2026-10-23T12:22:19.958705Z`.
++  Published content matches `firestore.rules`, SHA-256
++  `8fcd32513ab6571bcfd98d7a440b7ff8af364e6e8c2a6dd8c97f9f9a6646840f`.
++- Production API checks passed: anonymous requests 401; unverified test account 403;
++  verified test account 200 with an empty business list; disabled account 401;
++  direct protected Firestore reads 403. The temporary Auth account was deleted.
++  This verifies server credentials and isolation, not an existing user's full mobile flow.
++- iOS **1.0.0 (9)** built successfully from mobile commit `dfb7f8d`:
++  [EAS build](https://expo.dev/accounts/vintrastudio/projects/VintraApp/builds/51348747-04a0-4741-b781-f86a788c77ec).
++  [TestFlight submission](https://expo.dev/accounts/vintrastudio/projects/VintraApp/submissions/584830fc-f2bd-4182-a2d6-464fd7fb966f)
++  finished successfully on 25 October. App Store Connect app ID is `6776323865`.
++  Apple processing and availability on the user's phone have not been independently verified.
++- Notification delivery remains disabled by the checked-in release gate; a signed
++  notification request returned 503 as intended. No announcement or phone push was sent.
++
++At that point, push was still blocked pending activation. The 26 October follow-up above
++supersedes that global block. No billing or subscription changes were made.
++
++### Migration history and remaining access review
 +
 +Website: `/Users/martinsecker/Documents/vintrachat_xoxo`, branch
 +`codex/secure-vercel-notifications`, Next.js root `my-app/`.
@@ -116,11 +167,10 @@ index 0000000..8c63b77
 +The original notification patch (base `791257323af5afb15a68134a6bc34cf038cbe90d`)
 +was applied and compared byte-for-byte with the sibling implementation before changes.
 +The sibling checkout and original integration patch were not overwritten.
-+Commit `752c3df` was created/pushed externally during this work; publish the completed
-+working tree after committing the follow-up fixes, not that intermediate commit alone.
++Commit `752c3df` was an intermediate change; the published `96d2167` includes the completed fixes.
 +
-+Read-only production checks:
-+- `POST https://chat.vintrastudio.com/api/access` returned **404**. This causes the
++Production checks before publication:
++- `POST https://chat.vintrastudio.com/api/access` previously returned **404**. This caused the
 +  mobile “Account access is not activated yet” error. A preview branch does not update
 +  the production custom domain.
 +- Initially, active Firestore rules allowed all reads/writes (release from 27 March).
@@ -135,11 +185,11 @@ index 0000000..8c63b77
 +  `vintrastudios-projects`, project ID `prj_MxVgYXGLkWevB21hg7eGmSJqFFLr`.
 +  Environment metadata access returned 403; CLI fallback could not access that scope.
 +  Production environment values and the notification flag have **not** been verified
-+  or changed. This migration release also has a checked-in `accessReviewComplete=false` gate in
-+  `src/lib/notifications/release.mjs`; no environment value can enable delivery yet.
++  or changed. The original migration had a checked-in `accessReviewComplete=false` gate;
++  the activation follow-up replaces it with the production environment switch.
 +
-+No production deployment, Firebase rule publication, billing change, subscription
-+change, real announcement or device push was performed by this work.
++The website and rules are now published as recorded above. Existing ownership data
++has not been approved or silently repaired.
 +
 +## What ships
 +
@@ -170,7 +220,8 @@ index 0000000..8c63b77
 +  messages are still transactionally saved but notification jobs are not created.
 +- Expo tokens are per device, not per account. Opt-out/unregister, token reassignment,
 +  duplicate job/attempt protection, leases, retries and invalid-token handling remain.
-+  Unregister is allowed while notifications are disabled and never starts delivery.
++  Registration, unregister and the admin panel are allowed while delivery is disabled;
++  none starts delivery while disabled.
 +  Every send rechecks current device preferences, active business access (including
 +  announcements to all businesses), Auth verification/disablement and session revocation.
 +- Email verification now sets Firebase Auth `emailVerified`. Server-signed verification
@@ -182,7 +233,7 @@ index 0000000..8c63b77
 +
 +## Local validation
 +
-+Completed locally: 12 emulator tests, 17 notification/authentication tests, 4 mobile
++Completed locally: 12 emulator tests, 20 notification/authentication tests, 4 mobile
 +transport tests, TypeScript in both projects and the website production build passed.
 +The built Next.js server also returned the expected 401 JSON for unsigned POSTs to both
 +APIs, 403 JSON for untrusted origins and 204 for allowed preflights. These HTTP checks
@@ -212,7 +263,11 @@ index 0000000..8c63b77
 +node --test tests/notification-api.test.mjs
 +```
 +
-+## Production publication sequence (notifications remain off)
++## Release and activation checklist
++
++The website, rules and TestFlight upload steps below are complete. Retain this sequence
++for follow-up releases; real-user acceptance and confirmation of the production environment
++switch remain open. Missing/unverified accounts must be resolved individually.
 +
 +1. Review `.audit/access.json` with the business owner. Old public rules cannot prove that
 +   existing owner IDs, memberships or pending invitations are legitimate. Resolve unknown
@@ -238,9 +293,9 @@ index 0000000..8c63b77
 +5. Verify production login, business selection, invitation acceptance, staff reply and
 +   anonymous denial. Publish a **new TestFlight/native build** from the updated mobile tree.
 +   Old builds use Firebase Functions and old discovery/invitation logic; they are incompatible.
-+6. Only after access inventory and production authorization checks pass, consider setting
-+   `VINTRA_NOTIFICATIONS_ENABLED=true` and redeploying. This activation needs a separate decision and a reviewed change to
-+   `accessReviewComplete` in `src/lib/notifications/release.mjs` before redeployment.
++6. Activation was requested on 26 October. Set `VINTRA_NOTIFICATIONS_ENABLED=true` for
++   Production and redeploy the tested follow-up. Preview stays disabled by code as well
++   as its environment setting. Setting the production flag to false stops delivery again.
 +   Test only a consented device/support message first; no bulk announcement is needed.
 +
 +Additional environment settings:
@@ -12508,7 +12563,7 @@ index 0085c92..47cbeb2 100644
 -}
 diff --git a/my-app/src/lib/notifications.server.ts b/my-app/src/lib/notifications.server.ts
 new file mode 100644
-index 0000000..1be29dc
+index 0000000..31bfa2b
 --- /dev/null
 +++ b/my-app/src/lib/notifications.server.ts
 @@ -0,0 +1,57 @@
@@ -12519,7 +12574,7 @@ index 0000000..1be29dc
 +import { deliveryEnabled } from './notifications/release.mjs';
 +
 +export const notificationsEnabled = () =>
-+  deliveryEnabled(process.env.VINTRA_NOTIFICATIONS_ENABLED);
++  deliveryEnabled(process.env.VINTRA_NOTIFICATIONS_ENABLED, process.env.VERCEL_ENV);
 +
 +export function notificationService() {
 +  return createNotificationService(getAdminDb(), {
@@ -12571,10 +12626,10 @@ index 0000000..1be29dc
 +}
 diff --git a/my-app/src/lib/notifications/core.mjs b/my-app/src/lib/notifications/core.mjs
 new file mode 100644
-index 0000000..c982ec5
+index 0000000..e6a5d90
 --- /dev/null
 +++ b/my-app/src/lib/notifications/core.mjs
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,43 @@
 +import { createHash } from 'node:crypto';
 +
 +export const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -12587,7 +12642,10 @@ index 0000000..c982ec5
 +    token.email?.toLowerCase() === 'vintrastudio@gmail.com');
 +export const isMember = (business, membership, uid) =>
 +  membership?.status !== 'disabled' && (business?.ownerId === uid ||
-+    (membership && ['admin', 'support', 'manager'].includes(membership.role) && membership.status === 'active'));
++    (membership && ['admin', 'support', 'manager', 'viewer', 'user'].includes(membership.role) && membership.status === 'active'));
++export const isSupportMember = (business, membership, uid) =>
++  isMember(business, membership, uid) && (business?.ownerId === uid ||
++    ['admin', 'support', 'manager'].includes(membership?.role));
 +export function messageKey(message) {
 +  return String(
 +    message.id ||
@@ -12617,10 +12675,10 @@ index 0000000..c982ec5
 +}
 diff --git a/my-app/src/lib/notifications/http.mjs b/my-app/src/lib/notifications/http.mjs
 new file mode 100644
-index 0000000..ff20343
+index 0000000..f01288c
 --- /dev/null
 +++ b/my-app/src/lib/notifications/http.mjs
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,134 @@
 +import { NotificationError } from './service.mjs';
 +
 +const notificationActions = new Set([
@@ -12711,7 +12769,8 @@ index 0000000..ff20343
 +          'Invalid notification request.',
 +        );
 +      }
-+      if (!enabled() && input.action !== 'unregisterNotificationDevice')
++      // The kill switch stops sends, not device preferences or the admin panel.
++      if (!enabled() && input.action === 'queueAnnouncement')
 +        return reply(
 +          {
 +            error: {
@@ -12756,27 +12815,27 @@ index 0000000..ff20343
 +}
 diff --git a/my-app/src/lib/notifications/release.mjs b/my-app/src/lib/notifications/release.mjs
 new file mode 100644
-index 0000000..7ae757b
+index 0000000..e790f79
 --- /dev/null
 +++ b/my-app/src/lib/notifications/release.mjs
-@@ -0,0 +1,5 @@
-+// Keep this release off until production ownership/membership has been reviewed.
-+// This code gate also protects deployment when Vercel environment access is unavailable.
-+export const accessReviewComplete = false;
-+export const deliveryEnabled = (environmentValue) =>
-+  accessReviewComplete && environmentValue === 'true';
+@@ -0,0 +1,4 @@
++// Access checks are enforced per sender and recipient. Only production can send;
++// missing/false configuration and preview deployments never deliver notifications.
++export const deliveryEnabled = (environmentValue, deploymentEnvironment) =>
++  deploymentEnvironment === 'production' && environmentValue === 'true';
 diff --git a/my-app/src/lib/notifications/service.mjs b/my-app/src/lib/notifications/service.mjs
 new file mode 100644
-index 0000000..f8e4312
+index 0000000..de7e199
 --- /dev/null
 +++ b/my-app/src/lib/notifications/service.mjs
-@@ -0,0 +1,471 @@
+@@ -0,0 +1,473 @@
 +import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 +import {
 +  hash,
 +  validToken,
 +  isSuperAdmin,
 +  isMember,
++  isSupportMember,
 +  incomingMessages,
 +  messageKey,
 +  channelId,
@@ -12815,12 +12874,13 @@ index 0000000..f8e4312
 +      );
 +    return auth;
 +  }
-+  async function hasAccess(uid, businessId) {
++  async function hasAccess(uid, businessId, supportOnly = false) {
 +    const [business, member] = await Promise.all([
 +      db.doc(`businesses/${businessId}`).get(),
 +      db.doc(`businesses/${businessId}/users/${uid}`).get(),
 +    ]);
-+    return business.exists && isMember(business.data(), member.data(), uid);
++    const permits = supportOnly ? isSupportMember : isMember;
++    return business.exists && permits(business.data(), member.data(), uid);
 +  }
 +
 +  async function registerNotificationDevice(request) {
@@ -13038,7 +13098,7 @@ index 0000000..f8e4312
 +        if (
 +          job.targetBusinessId !== 'all' &&
 +          !job.testToken &&
-+          !(await hasAccess(d.userId, job.targetBusinessId))
++          !(await hasAccess(d.userId, job.targetBusinessId, job.kind === 'chat'))
 +        )
 +          continue;
 +        if (job.targetBusinessId === 'all' || job.testToken) {
@@ -13801,10 +13861,10 @@ index 0000000..7bb054f
 +}
 diff --git a/my-app/tests/notifications.test.mjs b/my-app/tests/notifications.test.mjs
 new file mode 100644
-index 0000000..4b9927b
+index 0000000..d29caaf
 --- /dev/null
 +++ b/my-app/tests/notifications.test.mjs
-@@ -0,0 +1,345 @@
+@@ -0,0 +1,396 @@
 +import test from 'node:test';
 +import assert from 'node:assert/strict';
 +import { Timestamp } from 'firebase-admin/firestore';
@@ -13814,10 +13874,12 @@ index 0000000..4b9927b
 +import { memoryDb } from './notification-memory-db.mjs';
 +import { deliveryEnabled } from '../src/lib/notifications/release.mjs';
 +
-+test('this migration release cannot send pushes even with an unknown enabled environment', () => {
-+  assert.equal(deliveryEnabled('true'), false);
-+  assert.equal(deliveryEnabled('false'), false);
-+  assert.equal(deliveryEnabled(undefined), false);
++test('delivery requires explicit activation in production, never in previews', () => {
++  assert.equal(deliveryEnabled('true', 'production'), true);
++  for (const environment of ['preview', 'development', undefined])
++    assert.equal(deliveryEnabled('true', environment), false);
++  for (const value of ['false', undefined, '', 'TRUE'])
++    assert.equal(deliveryEnabled(value, 'production'), false);
 +});
 +
 +const staff = {
@@ -14039,7 +14101,7 @@ index 0000000..4b9927b
 +    400,
 +  );
 +  enabled = false;
-+  assert.equal((await handle(request('verified', data))).status, 503);
++  assert.equal((await handle(request('verified', { action: 'queueAnnouncement', data: {} }))).status, 503);
 +  assert.equal(calls, 0);
 +});
 +test('HTTP valid registration uses authenticated identity and schedules delivery after response', async () => {
@@ -14102,6 +14164,55 @@ index 0000000..4b9927b
 +  await db.doc('businesses/b1/users/staff').update({ status: 'disabled' });
 +  await service.drain();
 +  assert.equal(sends, 0);
++});
++test('all active roles receive announcements, while customer messages only reach support staff', async () => {
++  const sent = [];
++  const { db, service } = await setup(async (_, options) => {
++    sent.push(JSON.parse(options.body)[0]);
++    return Response.json({ data: [{ status: 'ok', id: `receipt-${sent.length}` }] });
++  });
++  const recipientTokens = [deviceToken];
++  for (const role of ['viewer', 'user', 'admin', 'manager']) {
++    await db.doc(`businesses/b1/users/${role}`).set({ role, status: 'active' });
++    const token = `ExpoPushToken[${role}]`;
++    recipientTokens.push(token);
++    const result = await service.registerNotificationDevice(req({ ...staff, uid: role }, { token, businessIds: ['b1'], platform: 'ios' }));
++    assert.equal(result.businesses, 1);
++  }
++  await service.registerNotificationDevice(req({ ...staff, uid: 'outsider' }, { token: 'ExpoPushToken[outsider]', businessIds: ['b1'], platform: 'ios' }));
++  await save(db, service);
++  await service.drain();
++  assert.deepEqual(sent.map(x => x.to).sort(), [deviceToken, 'ExpoPushToken[admin]', 'ExpoPushToken[manager]'].sort());
++  for (const targetBusinessId of ['b1', 'all']) {
++    const start = sent.length;
++    await service.queueAnnouncement(req(admin, { title: 'News', body: 'Mock only', targetBusinessId, requestId: `all-roles-${targetBusinessId}-123456` }));
++    await service.drain();
++    assert.deepEqual(sent.slice(start).map(x => x.to).sort(), [...recipientTokens].sort());
++  }
++  await db.doc('businesses/b1/users/viewer').update({ status: 'disabled' });
++  const start = sent.length;
++  await service.queueAnnouncement(req(admin, { title: 'News', body: 'Mock only', targetBusinessId: 'all', requestId: 'revoked-viewer-123456' }));
++  await service.drain();
++  assert.ok(!sent.slice(start).some(x => x.to === 'ExpoPushToken[viewer]'));
++});
++
++test('Vintra admin can open the panel while ordinary recipients cannot; disabled delivery still allows device registration', async () => {
++  const { db, service } = await setup(() => { throw new Error('No real pushes'); });
++  const vintra = { uid: 'vintra', email_verified: true, email: 'vintrastudio@gmail.com' };
++  const handle = createNotificationHandler({ enabled: () => false, origins: [],
++    verifyToken: async token => token === 'vintra' ? vintra : { uid: 'staff', ...staff.token },
++    service: () => service, schedule: () => { throw new Error('Disabled delivery must not run'); } });
++  const call = (token, action, data = {}) => handle(new Request('https://test', {
++    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ action, data }),
++  }));
++  const panel = await call('vintra', 'notificationCenter');
++  assert.equal(panel.status, 200);
++  assert.equal((await panel.json()).data.businesses.length, 1);
++  assert.equal((await call('staff', 'notificationCenter')).status, 403);
++  await assert.rejects(() => service.queueAnnouncement(req(staff, { title: 'News', body: 'Mock', targetBusinessId: 'all', requestId: 'staff-cannot-send-123' })), { code: 'permission-denied' });
++  assert.equal((await call('staff', 'registerNotificationDevice', { token: 'ExpoPushToken[pending-activation]', businessIds: ['b1'], platform: 'ios' })).status, 200);
++  assert.equal((await call('vintra', 'queueAnnouncement', { title: 'News', body: 'Mock', targetBusinessId: 'all', requestId: 'no-queue-disabled-123' })).status, 503);
++  assert.equal((await db.collection('notificationJobs').get()).size, 0);
 +});
 +test('recipient Auth disablement/revocation prevents delivery even with a membership', async () => {
 +  const { db } = await setup();

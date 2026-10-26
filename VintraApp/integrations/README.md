@@ -46,10 +46,15 @@ App Store Connect on 25 October:
 [successful submission](https://expo.dev/accounts/vintrastudio/projects/VintraApp/submissions/584830fc-f2bd-4182-a2d6-464fd7fb966f).
 Apple processing and installation on a phone remain unverified. `eas.json` now pins
 the existing App Store Connect app ID `6776323865` for subsequent submissions.
-Notification delivery remains blocked in server code until existing ownership and
-membership data has been reviewed. No real announcement or push was sent.
+The 26 October server follow-up (`a2a6f21`) lets the verified Vintra admin open the
+panel and lets all active business roles register for announcements, including users
+and viewers. Customer-message pushes still require a support role or ownership.
+Sending requires `VINTRA_NOTIFICATIONS_ENABLED=true` in Vercel Production and a redeploy;
+the temporary migration gate has been removed, and Preview never sends. Device
+registration and the panel work while sending is off. No new native build is needed
+beyond 1.0.0 (9) for this server change. No real announcement or push was sent by testing.
 
 Locally verified: mobile TypeScript and 4 transport tests; website TypeScript, production
-build, 18 notification/auth tests, 12 emulator tests, and unsigned/origin HTTP checks.
+build, 20 notification/auth tests, 12 emulator tests, and unsigned/origin HTTP checks.
 Actual phone delivery has not been tested. No paid service or Firebase Functions
 deployment is needed.
