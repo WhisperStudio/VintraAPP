@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SymbolView } from 'expo-symbols';
@@ -78,6 +79,7 @@ const emptyCenter: NotificationCenter = {
 };
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
+  const focused = useIsFocused();
   const wide = useWindowDimensions().width >= 940;
   const { colorScheme } = useThemePreference();
   const light = colorScheme === 'light';
@@ -287,7 +289,7 @@ export default function NotificationsScreen() {
         >
           <View style={st.page}>
             <View style={st.hero}>
-              <AuroraSky />
+              <AuroraSky active={focused} />
               <LinearGradient
                 colors={['rgba(5,19,30,0.1)', 'rgba(5,19,30,0.94)']}
                 style={StyleSheet.absoluteFill}

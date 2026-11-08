@@ -50,13 +50,13 @@ function curtain(seed: number) {
 const near = curtain(1);
 const far = curtain(4);
 
-function AuroraLayer({ distant = false }: { distant?: boolean }) {
+function AuroraLayer({ distant = false, active }: { distant?: boolean; active: boolean }) {
   const id = useId().replace(/:/g, '');
   const phase = useSharedValue(0);
   const reduceMotion = useReducedMotion();
   useEffect(() => {
     const start = () => {
-      if (!reduceMotion)
+      if (active && !reduceMotion)
         phase.value = withRepeat(
           withTiming(1, {
             duration: distant ? 22000 : 17000,
@@ -66,7 +66,7 @@ function AuroraLayer({ distant = false }: { distant?: boolean }) {
           true,
         );
     };
-    start();
+    if (AppState.currentState === 'active') start();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') start();
       else cancelAnimation(phase);
@@ -75,7 +75,7 @@ function AuroraLayer({ distant = false }: { distant?: boolean }) {
       subscription.remove();
       cancelAnimation(phase);
     };
-  }, [distant, phase, reduceMotion]);
+  }, [active, distant, phase, reduceMotion]);
   const drift = useAnimatedStyle(() => ({
     opacity: distant ? 0.36 : 0.65 + phase.value * 0.18,
     transform: [
@@ -164,7 +164,7 @@ function AuroraLayer({ distant = false }: { distant?: boolean }) {
   );
 }
 
-export const AuroraSky = memo(function AuroraSky() {
+export const AuroraSky = memo(function AuroraSky({ active = true }: { active?: boolean }) {
   const id = useId().replace(/:/g, '');
   return (
     <View
@@ -202,8 +202,8 @@ export const AuroraSky = memo(function AuroraSky() {
           />
         ))}
       </Svg>
-      <AuroraLayer distant />
-      <AuroraLayer />
+      <AuroraLayer distant active={active} />
+      <AuroraLayer active={active} />
       <Svg
         style={StyleSheet.absoluteFill}
         width="100%"

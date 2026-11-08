@@ -51,7 +51,7 @@ test('expired identity refreshes once and preserves announcement request id', as
 });
 test('server setup, permission, malformed result and connection failures never report success', async () => {
   const checks = [
-    [async () => new Response('not found', { status: 404 }), /not activated/],
+    [async () => new Response('not found', { status: 404 }), /endpoint was not found/],
     [
       async () =>
         Response.json({ error: { message: 'No access' } }, { status: 403 }),
@@ -96,5 +96,17 @@ test('rejects unsafe destination before fetching credentials', async () => {
         ),
       /address is invalid/,
     );
+  }
+});
+
+test('preserves actionable 503 errors and distinguishes temporary outages', async () => {
+  for (const [response, expected] of [
+    [Response.json({ error: { message: 'Server authentication is not configured.' } }, { status: 503 }), /Server authentication is not configured/],
+    [new Response('Unavailable', { status: 503 }), /temporarily unavailable/],
+    [Response.json({ error: { message: 'Business not found.' } }, { status: 404 }), /Business not found/],
+  ]) {
+    await assert.rejects(() => requestNotificationApi('notificationCenter', {}, {
+      endpoint, getToken: async () => 'token', fetchImpl: async () => response,
+    }), expected);
   }
 });

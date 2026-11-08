@@ -1,9 +1,8 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { onAuthStateChanged } from 'firebase/auth';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
 import { useTranslation } from '@/lib/i18n';
-import { firebaseAuth } from '@/lib/firebase';
+import { useAuthSession } from '@/lib/auth-session';
 import { useTabsHidden } from '@/lib/tab-visibility';
 import { useThemePreference } from '@/lib/theme-preference';
 
@@ -20,12 +19,7 @@ export default function AppTabs() {
     badge: '#ef4444',
   };
   const { t } = useTranslation();
-  const [user, setUser] = useState<import('firebase/auth').User | null>(null);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(firebaseAuth, (u) => setUser(u));
-    return unsub;
-  }, []);
+  const { user } = useAuthSession();
 
   const isSuperAdmin = user?.email?.toLowerCase() === 'vintrastudio@gmail.com';
 

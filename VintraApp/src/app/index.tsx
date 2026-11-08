@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
@@ -302,11 +303,12 @@ export function AuthScreen({ compact }: { compact: boolean }) {
 }
 
 function AdminBackground({ isLight }: { isLight?: boolean }) {
+  const focused = useIsFocused();
   return (
     <View pointerEvents="none" style={styles.adminBackground}>
       {isLight ? <View style={[StyleSheet.absoluteFill, { backgroundColor: '#f0f6f7' }]} /> : (
         <>
-          <AuroraSky />
+          <AuroraSky active={focused} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3,12,22,0.48)' }]} />
         </>
       )}
@@ -376,7 +378,6 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     };
   }, [lang]);
 
-  useEffect(loadQuickReplySettings, [loadQuickReplySettings]);
   useFocusEffect(loadQuickReplySettings);
 
   // Fetch named widgets from chatWidgets subcollection whenever the active business changes
@@ -395,7 +396,7 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
     });
   }, [adminProfile, notificationRoute.businessId]);
 
-  const visibleChats = chats.filter((chat) => chat.status !== 'closed');
+  const visibleChats = useMemo(() => chats.filter((chat) => chat.status !== 'closed'), [chats]);
 
   // Full widget list: start from Firestore, append any widgetKeys seen in chats that aren't listed there
   const uniqueWidgets: Widget[] = useMemo(() => {

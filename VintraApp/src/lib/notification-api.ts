@@ -38,10 +38,17 @@ export async function requestNotificationApi<T>(
       if (response.status === 401 && attempt === 0) continue;
       const result = await response.json().catch(() => null);
       if (!response.ok) {
-        if (response.status === 404 || response.status === 503) {
+        // Preserve actionable server errors instead of hiding every 404/503.
+        if (typeof result?.error?.message === 'string' && result.error.message.trim()) {
+          throw new Error(result.error.message);
+        }
+        if (response.status === 404) {
           throw new Error(
-            `${serviceName} is not activated yet. Please try again later.`,
+            `${serviceName}: the service endpoint was not found.`,
           );
+        }
+        if (response.status === 503) {
+          throw new Error(`${serviceName} is temporarily unavailable. Please try again.`);
         }
         throw new Error(
           result?.error?.message ||

@@ -1,5 +1,31 @@
 # Vercel notification backend
 
+## Notification activation and tab performance (8 November 2026)
+
+Production environment inspection confirmed that `VINTRA_NOTIFICATIONS_ENABLED`
+was missing from `vintrastudios-projects/vintrachat-xoxo`. The CLI successfully
+added it as a Production-only Config variable with value `true`. The connector's
+403 did not apply to the CLI credentials. Preview delivery remains disabled by
+the existing server guard.
+
+Redeployed the existing production deployment `dpl_3Pxcba8Xkh1jbbHTi1w98YMmaMUE`
+with the updated environment. Replacement
+[`dpl_3pkKKwYpsreCg4d4WQrUnmjKKhkj`](https://vercel.com/vintrastudios-projects/vintrachat-xoxo/3pkKKwYpsreCg4d4WQrUnmjKKhkj)
+is READY and serves `https://chat.vintrastudio.com`. Post-release checks: home
+200, unsigned notification request 401, zero error/fatal log records in the
+initial ten-minute query window. No announcement or test push was sent.
+
+The mobile transport now preserves the server's actionable 404/503 error message
+instead of replacing every such error with “not activated yet”. Hidden inbox and
+notification tabs pause their aurora animations. The inbox memoizes its visible
+chat list so rendering does not repeatedly restart the saved-widget storage read;
+duplicate quick-reply reads and the tab bar's extra auth subscription were removed.
+
+Validation: mobile TypeScript, five API transport tests, iOS bundle export and
+23 backend notification/auth tests passed. Lint has no errors (three existing
+warnings). Physical-device delivery and tab timing have not been measured.
+Mobile performance changes require reloading the development app or a new build.
+
 ## Customer chat alerts (26 October 2026)
 
 `customer-chat-notifications.patch` contains a follow-up for the website checkout
