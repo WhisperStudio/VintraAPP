@@ -2,7 +2,7 @@ import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
@@ -56,6 +56,7 @@ import { firebaseAuth } from '@/lib/firebase';
 import { useAuthSession } from '@/lib/auth-session';
 import { useTranslation } from '@/lib/i18n';
 import { signOutWithNotifications } from '@/lib/notifications';
+import { trackVisibleChat } from '@/lib/notification-visibility';
 import { getDefaultQuickReplies, loadQuickReplies, loadQuickRepliesEnabled, type QuickReply } from '@/lib/quick-replies';
 import { setTabsHidden } from '@/lib/tab-visibility';
 import { useThemePreference } from '@/lib/theme-preference';
@@ -317,6 +318,7 @@ function AdminBackground({ isLight }: { isLight?: boolean }) {
 }
 
 function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChatId, onChatSelect }: { user: User; compact: boolean; chatOpen: boolean; setChatOpen: (v: boolean) => void; initialSelectedChatId?: string | null; onChatSelect?: (id: string) => void }) {
+  const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { t: adminT, lang } = useTranslation();
   const { colorScheme } = useThemePreference();
@@ -496,6 +498,12 @@ function AdminScreen({ user, compact, chatOpen, setChatOpen, initialSelectedChat
   }, [chatOpen, selectedChatId, widgetChats]);
 
   const openChatId = openChat?.id;
+  const openChatBusinessId = openChat?.businessId;
+  useLayoutEffect(() => {
+    if (!focused || (compact && !chatOpen) || !openChatId || !openChatBusinessId) return;
+    return trackVisibleChat({ userId: user.uid, businessId: openChatBusinessId, chatId: openChatId });
+  }, [focused, compact, chatOpen, openChatId, openChatBusinessId, user.uid]);
+
   const openChatMessageCount = openChat?.messages.length;
   useEffect(() => {
     if (!openChatId) return;

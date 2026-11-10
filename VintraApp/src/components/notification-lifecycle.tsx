@@ -60,6 +60,7 @@ export function NotificationLifecycle({ user }: { user: User }) {
                           message.text,
                           preferences.sound,
                           {
+                            type: 'chat',
                             chatId: chat.id,
                             businessId: chat.businessId,
                             notificationId: message.id,

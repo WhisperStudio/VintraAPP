@@ -2,11 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { signOut } from 'firebase/auth';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useSyncExternalStore } from 'react';
 import { firebaseAuth } from '@/lib/firebase';
 import { resolveAllAdminProfiles } from '@/lib/admin-chat';
 import { callNotificationService } from '@/lib/push-sender';
+import { isViewingNotificationChat } from '@/lib/notification-visibility';
 
 type Preferences = { enabled: boolean; sound: boolean; vibration: boolean };
 type DeviceState = {
@@ -54,17 +55,27 @@ export async function loadNotificationPreferences() {
 export const notificationChannel = (sound: boolean, vibration: boolean) =>
   `messages-${sound ? 'sound' : 'silent'}-${vibration ? 'vibrate' : 'still'}`;
 
+function isChatAlreadyVisible(data: Record<string, unknown>) {
+  const foreground = Platform.OS === 'web'
+    ? typeof document !== 'undefined' && document.visibilityState === 'visible' && document.hasFocus()
+    : AppState.currentState === 'active';
+  return isViewingNotificationChat(data, foreground, firebaseAuth.currentUser?.uid);
+}
+
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
-    handleNotification: async (notification) => ({
-      shouldPlaySound:
-        preferences.enabled &&
-        preferences.sound &&
-        notification.request.content.sound != null,
-      shouldSetBadge: false,
-      shouldShowBanner: preferences.enabled,
-      shouldShowList: preferences.enabled,
-    }),
+    handleNotification: async (notification) => {
+      const show = preferences.enabled && !isChatAlreadyVisible(notification.request.content.data ?? {});
+      return {
+        shouldPlaySound:
+          show &&
+          preferences.sound &&
+          notification.request.content.sound != null,
+        shouldSetBadge: false,
+        shouldShowBanner: show,
+        shouldShowList: show,
+      };
+    },
   });
 }
 async function configureChannels() {
@@ -228,6 +239,7 @@ export async function sendLocalNotification(
   playSound = true,
   data: Record<string, unknown> = {},
 ) {
+  if (isChatAlreadyVisible(data)) return;
   if (Platform.OS === 'web') {
     if (
       typeof window === 'undefined' ||
